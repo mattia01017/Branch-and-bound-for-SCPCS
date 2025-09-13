@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/lukpank/go-glpk/glpk"
+	"gonum.org/v1/gonum/mat"
 )
 
 func arange(start, end int) []int32 {
@@ -13,7 +14,7 @@ func arange(start, end int) []int32 {
 	return nums
 }
 
-func runMIPSolver(prob *glpk.Prob) (*SCPCSSolution, error) {
+func (inst *SCPCSInstance) runMIPSolver(prob *glpk.Prob) (*SCPCSSolution, error) {
 	iocp := glpk.NewIocp()
 	iocp.SetPresolve(true)
 	iocp.SetMsgLev(glpk.MSG_OFF)
@@ -22,73 +23,73 @@ func runMIPSolver(prob *glpk.Prob) (*SCPCSSolution, error) {
 		return nil, err
 	}
 
-	selected := make([]int, 0)
-	for j := range prob.NumCols() {
+	selected := mat.NewVecDense(inst.NumSubsets, nil)
+	for j := range inst.NumSubsets {
 		if prob.MipColVal(j+1) > 0.5 {
-			selected = append(selected, j)
+			selected.SetVec(j, 1)
 		}
 	}
 
 	return &SCPCSSolution{
 		SelectedSubsets: selected,
-		TotalCost:       int(prob.MipObjVal()),
+		TotalCost:       prob.MipObjVal(),
 	}, nil
+}
+
+func (inst *SCPCSInstance) defBaseSCP(prob *glpk.Prob) {
+	prob.SetObjDir(glpk.MIN)
+
+	prob.AddCols(inst.NumSubsets)
+	for j := range inst.NumSubsets {
+		prob.SetColKind(j+1, glpk.BV)
+		prob.SetObjCoef(j+1, float64(inst.Costs.At(j, 0)))
+	}
+
+	prob.AddRows(inst.NumElements)
+	for i := range inst.NumElements {
+		prob.SetRowBnds(i+1, glpk.LO, 1, 1)
+	}
+
+	colMask := make([]float64, prob.NumRows()+1)
+	for j := range inst.NumElements {
+		v := inst.Subsets.ColView(j)
+		for i := range inst.NumElements {
+			colMask[i+1] = v.At(i, 0)
+		}
+		prob.SetMatCol(j+1, arange(0, inst.NumElements+1), colMask)
+	}
+}
+
+func (inst *SCPCSInstance) defConflicts(prob *glpk.Prob) {
+	for i := range inst.NumSubsets - 1 {
+		for j := i + 1; j < inst.NumSubsets; j++ {
+			if inst.Conflicts.At(i, j) > 0 {
+				prob.AddCols(1)
+				prob.AddRows(1)
+				prob.SetObjCoef(prob.NumCols(), inst.Conflicts.At(i, j))
+
+				rowMask := make([]float64, prob.NumCols()+1)
+				colMask := make([]float64, prob.NumRows()+1)
+				rowMask[i+1] = 1
+				rowMask[j+1] = 1
+				rowMask[prob.NumCols()] = -1
+
+				prob.SetRowBnds(prob.NumRows(), glpk.UP, 1, 1)
+				prob.SetMatRow(prob.NumRows(), arange(0, prob.NumCols()+1), rowMask)
+				prob.SetMatCol(prob.NumCols(), arange(0, prob.NumRows()+1), colMask)
+			}
+		}
+	}
 }
 
 func (inst *SCPCSInstance) defSCPCS() *glpk.Prob {
 	prob := glpk.New()
-	prob.SetObjDir(glpk.MIN)
-
-	numVars := len(inst.Subsets)
-	prob.AddCols(numVars)
-	for j := range numVars {
-		prob.SetColKind(j+1, glpk.BV)
-		prob.SetObjCoef(j+1, float64(inst.Subsets[j].Cost))
-	}
-
-	numConstraints := inst.NumElements
-	prob.AddRows(numConstraints)
-	for i := range numConstraints {
-		prob.SetRowBnds(i+1, glpk.LO, 1, 1)
-	}
-
-	mask := make([]float64, numConstraints+1)
-	for j, subset := range inst.Subsets {
-		for i := range numConstraints {
-			if subset.Set.Contains(int32(i + 1)) {
-				mask[i+1] = 1
-			} else {
-				mask[i+1] = 0
-			}
-		}
-		prob.SetMatCol(j+1, arange(0, numConstraints+1), mask)
-	}
-
-	mask = make([]float64, numVars+1)
-	for i := range len(inst.Conflicts) - 1 {
-		for j := i + 1; j < len(inst.Conflicts); j++ {
-			if inst.Conflicts[i][j] == 1 {
-				prob.AddCols(1)
-				prob.AddRows(1)
-				numVars++
-				numConstraints++
-				prob.SetRowBnds(numConstraints, glpk.UP, 1, 1)
-
-				for k := range mask {
-					mask[k] = 0
-				}
-				mask[i+1] = 1
-				mask[j+1] = 1
-				mask = append(mask, -1)
-				prob.SetMatRow(numConstraints, arange(0, numVars+1), mask)
-			}
-		}
-
-	}
+	inst.defBaseSCP(prob)
+	inst.defConflicts(prob)
 	return prob
 }
 
 func (inst *SCPCSInstance) Solve() (*SCPCSSolution, error) {
 	prob := inst.defSCPCS()
-	return runMIPSolver(prob)
+	return inst.runMIPSolver(prob)
 }

@@ -9,24 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	mapset "github.com/deckarep/golang-set/v2"
+	"gonum.org/v1/gonum/mat"
 )
-
-type SCPCSInstance struct {
-	NumElements int
-	Subsets     []*Subset
-	Conflicts   [][]int
-}
-
-type Subset struct {
-	Cost int
-	Set  mapset.Set[int32]
-}
-
-type SCPCSSolution struct {
-	SelectedSubsets []int
-	TotalCost       int
-}
 
 func errorCoalesce(args ...error) error {
 	for _, e := range args {
@@ -44,13 +28,15 @@ func (inst *SCPCSInstance) parseFirstLine(scanner *bufio.Scanner) error {
 	if err != nil {
 		return fmt.Errorf("Error while parsing first line: %v", err)
 	}
-	numIncomp, err := strconv.Atoi(line[1])
+	numSubsets, err := strconv.Atoi(line[1])
 	if err != nil {
 		return fmt.Errorf("Error while parsing first line: %v", err)
 	}
 
 	inst.NumElements = numElements
-	inst.Subsets = make([]*Subset, numIncomp)
+	inst.NumSubsets = numSubsets
+	inst.Subsets = mat.NewDense(inst.NumElements, numSubsets, nil)
+	inst.Costs = mat.NewVecDense(numSubsets, nil)
 
 	return nil
 }
@@ -63,10 +49,7 @@ func (inst *SCPCSInstance) parseSecondLine(scanner *bufio.Scanner) error {
 		if err != nil {
 			return fmt.Errorf("Error while parsing second line: %v", err)
 		}
-		inst.Subsets[i] = &Subset{
-			Cost: v,
-			Set:  mapset.NewSet[int32](),
-		}
+		inst.Costs.SetVec(i, float64(v))
 	}
 	return nil
 }
@@ -80,7 +63,7 @@ func (inst *SCPCSInstance) parseIncompSets(scanner *bufio.Scanner) error {
 			if err != nil {
 				return fmt.Errorf("Error while parsing incompatibility set %d: %v", i, err)
 			}
-			inst.Subsets[v-1].Set.Add(int32(i + 1))
+			inst.Subsets.Set(i, v-1, 1)
 		}
 		i++
 	}
@@ -88,34 +71,24 @@ func (inst *SCPCSInstance) parseIncompSets(scanner *bufio.Scanner) error {
 }
 
 func (inst *SCPCSInstance) computeConflicts(conflictThreshold int) error {
-	inst.Conflicts = make([][]int, len(inst.Subsets))
-	for i := range inst.Conflicts {
-		inst.Conflicts[i] = make([]int, len(inst.Subsets))
-	}
-	for i := range inst.Subsets {
-		for j := i + 1; j < len(inst.Subsets); j++ {
-			intsersectionSize := inst.Subsets[i].Set.Intersect(inst.Subsets[j].Set).Cardinality()
+	inst.Conflicts = mat.NewDense(inst.NumSubsets, inst.NumSubsets, nil)
+	for i := range inst.NumSubsets {
+		for j := i + 1; j < inst.NumSubsets; j++ {
+			intsersectionSize := mat.Dot(inst.Subsets.ColView(i), (inst.Subsets.ColView(j)))
 			conflictSize := int(math.Max(float64(intsersectionSize)-float64(conflictThreshold), 0))
 			if conflictSize > 0 {
 				conflictCost := int(math.Round(
 					math.Max(
-						float64(inst.Subsets[i].Cost)/float64(inst.Subsets[i].Set.Cardinality()),
+						float64(inst.Costs.At(i, 0))/float64(mat.Sum(inst.Subsets.ColView(i))),
 						1.0,
 					),
 				))
-				inst.Conflicts[i][j] = conflictCost
-				inst.Conflicts[j][i] = conflictCost
+				inst.Conflicts.Set(i, j, float64(conflictCost))
+				inst.Conflicts.Set(j, i, float64(conflictCost))
 			}
 		}
 	}
 	return nil
-}
-
-func (sol *SCPCSSolution) String() string {
-	s := new(strings.Builder)
-	s.WriteString(fmt.Sprintf("Total cost: %d\n", sol.TotalCost))
-	s.WriteString(fmt.Sprintf("Selected subsets: %v\n", sol.SelectedSubsets))
-	return s.String()
 }
 
 func LoadInstance(filename string, conflictThreshold int) (*SCPCSInstance, error) {
@@ -139,33 +112,21 @@ func LoadInstance(filename string, conflictThreshold int) (*SCPCSInstance, error
 	return inst, nil
 }
 
-func (inst *SCPCSInstance) String() string {
-	s := new(strings.Builder)
-	s.WriteString(fmt.Sprintf("N. elements: %d\n", inst.NumElements))
-	s.WriteString(fmt.Sprintf("N. sets: %d\n", len(inst.Subsets)))
-
-	for _, incomp := range inst.Subsets {
-		s.WriteString(fmt.Sprintf("Cost: %d, ", incomp.Cost))
-		s.WriteString("Elements: ")
-		for e := range incomp.Set.Iter() {
-			s.WriteString(fmt.Sprintf("%d ", e))
-		}
-		s.WriteRune('\n')
-	}
-	// s.WriteString("Conflicts:\n")
-	// for _, row := range inst.Conflicts {
-	// 	s.WriteString(fmt.Sprintf("%v\n", row))
-	// }
-	return s.String()
-}
-
 func main() {
+	fmt.Println("Loading instance...")
 	instance, err := LoadInstance("data/example.txt", 0)
 	if err != nil {
 		log.Fatal(err)
 	}
-	// fmt.Println(instance)
-	solution, err := instance.Solve()
+	// fmt.Println("Solving instance...")
+	// solution, err := instance.Solve()
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
+	// fmt.Println(solution)
+
+	fmt.Println("Lagrangian step...")
+	solution, err := instance.SolveWithLagrangianRelaxation()
 	if err != nil {
 		log.Fatal(err)
 	}

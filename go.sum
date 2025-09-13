@@ -2,3 +2,7 @@ github.com/deckarep/golang-set/v2 v2.8.0 h1:swm0rlPCmdWn9mESxKOjWk8hXSqoxOp+Zlfu
 github.com/deckarep/golang-set/v2 v2.8.0/go.mod h1:VAky9rY/yGXJOLEDv3OMci+7wtDpOF4IN+y82NBOac4=
 github.com/lukpank/go-glpk v0.0.0-20180303121012-2e64496cbbfa h1:Yw0xrf0Et15qHHMQevm9HXyxhaUZasVrWQ3Qz2ogT+c=
 github.com/lukpank/go-glpk v0.0.0-20180303121012-2e64496cbbfa/go.mod h1:KEQoE37Z9T1bOAfFP0+yjmcgGabWf6j32MA+z6QmkhA=
+gonum.org/v1/gonum v0.16.0 h1:5+ul4Swaf3ESvrOnidPp4GZbzf0mxVQpDCYUQE7OJfk=
+gonum.org/v1/gonum v0.16.0/go.mod h1:fef3am4MQ93R2HHpKnLk4/Tbh/s0+wqD5nfa6Pnwy4E=
+gopkg.in/dnaeon/go-priorityqueue.v1 v1.1.1 h1:AS4IIyStH/47cZpPdBk/Db6QXg+UmcDjZvSOoDgGsbU=
+gopkg.in/dnaeon/go-priorityqueue.v1 v1.1.1/go.mod h1:JNUtwj2QQsBHhsIHNjxdDaSmLW4RZtvJHO8VYtsMkY4=

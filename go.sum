@@ -1,7 +1,9 @@
-github.com/deckarep/golang-set/v2 v2.8.0 h1:swm0rlPCmdWn9mESxKOjWk8hXSqoxOp+ZlfuyaAdFlQ=
-github.com/deckarep/golang-set/v2 v2.8.0/go.mod h1:VAky9rY/yGXJOLEDv3OMci+7wtDpOF4IN+y82NBOac4=
-github.com/lukpank/go-glpk v0.0.0-20180303121012-2e64496cbbfa h1:Yw0xrf0Et15qHHMQevm9HXyxhaUZasVrWQ3Qz2ogT+c=
-github.com/lukpank/go-glpk v0.0.0-20180303121012-2e64496cbbfa/go.mod h1:KEQoE37Z9T1bOAfFP0+yjmcgGabWf6j32MA+z6QmkhA=
+github.com/draffensperger/golp v0.0.0-20250721104811-2d405f0b4e68 h1:Zt1kA9y7DnXA5ACqWhHFD7yVXag6/uNsikEyR+4l+40=
+github.com/draffensperger/golp v0.0.0-20250721104811-2d405f0b4e68/go.mod h1:/TbDI9zua4CTUs81AOyDxnKAuvXX/SmOjonijHadP+k=
+github.com/lanl/highs v1.0.3 h1:E+0m1EBLl9rEJmnW59wT7XJsJ3uSenPRSYMotnPp5R0=
+github.com/lanl/highs v1.0.3/go.mod h1:2Z1f+OSB3JD+qTDUySxGnh6PN5Ns7XtZLUyHBk+aczc=
+golang.org/x/exp v0.0.0-20221217163422-3c43f8badb15 h1:5oN1Pz/eDhCpbMbLstvIPa0b/BEQo6g6nwV3pLjfM6w=
+golang.org/x/exp v0.0.0-20221217163422-3c43f8badb15/go.mod h1:CxIveKay+FTh1D0yPZemJVgC/95VzuuOLq5Qi4xnoYc=
 gonum.org/v1/gonum v0.16.0 h1:5+ul4Swaf3ESvrOnidPp4GZbzf0mxVQpDCYUQE7OJfk=
 gonum.org/v1/gonum v0.16.0/go.mod h1:fef3am4MQ93R2HHpKnLk4/Tbh/s0+wqD5nfa6Pnwy4E=
 gopkg.in/dnaeon/go-priorityqueue.v1 v1.1.1 h1:AS4IIyStH/47cZpPdBk/Db6QXg+UmcDjZvSOoDgGsbU=

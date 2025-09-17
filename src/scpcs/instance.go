@@ -26,11 +26,11 @@ func (inst *SCPCSInstance) parseFirstLine(scanner *bufio.Scanner) error {
 	line := strings.Fields(scanner.Text())
 	numElements, err := strconv.Atoi(line[0])
 	if err != nil {
-		return fmt.Errorf("Error while parsing first line: %v", err)
+		return fmt.Errorf("error while parsing first line: %v", err)
 	}
 	numSubsets, err := strconv.Atoi(line[1])
 	if err != nil {
-		return fmt.Errorf("Error while parsing first line: %v", err)
+		return fmt.Errorf("error while parsing first line: %v", err)
 	}
 
 	inst.NumElements = numElements
@@ -47,7 +47,7 @@ func (inst *SCPCSInstance) parseSecondLine(scanner *bufio.Scanner) error {
 	for i, tok := range line {
 		v, err := strconv.Atoi(tok)
 		if err != nil {
-			return fmt.Errorf("Error while parsing second line: %v", err)
+			return fmt.Errorf("error while parsing second line: %v", err)
 		}
 		inst.Costs.SetVec(i, float64(v))
 	}
@@ -61,7 +61,7 @@ func (inst *SCPCSInstance) parseIncompSets(scanner *bufio.Scanner) error {
 		for _, tok := range line {
 			v, err := strconv.Atoi(tok)
 			if err != nil {
-				return fmt.Errorf("Error while parsing incompatibility set %d: %v", i, err)
+				return fmt.Errorf("error while parsing incompatibility set %d: %v", i, err)
 			}
 			inst.Subsets.Set(i, v-1, 1)
 		}
@@ -72,6 +72,7 @@ func (inst *SCPCSInstance) parseIncompSets(scanner *bufio.Scanner) error {
 
 func (inst *SCPCSInstance) computeConflicts(conflictThreshold int) error {
 	inst.Conflicts = mat.NewDense(inst.NumSubsets, inst.NumSubsets, nil)
+	inst.ConflictsList = make([][]int, 0)
 	for i := range inst.NumSubsets {
 		for j := i + 1; j < inst.NumSubsets; j++ {
 			intsersectionSize := mat.Dot(inst.Subsets.ColView(i), (inst.Subsets.ColView(j)))
@@ -85,6 +86,7 @@ func (inst *SCPCSInstance) computeConflicts(conflictThreshold int) error {
 				))
 				inst.Conflicts.Set(i, j, float64(conflictCost))
 				inst.Conflicts.Set(j, i, float64(conflictCost))
+				inst.ConflictsList = append(inst.ConflictsList, []int{i, j})
 			}
 		}
 	}
@@ -114,7 +116,7 @@ func LoadInstance(filename string, conflictThreshold int) (*SCPCSInstance, error
 
 func main() {
 	fmt.Println("Loading instance...")
-	instance, err := LoadInstance("data/example.txt", 0)
+	instance, err := LoadInstance("data/scpcyc06-3.txt", 0)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -123,9 +125,8 @@ func main() {
 	// if err != nil {
 	// 	log.Fatal(err)
 	// }
-	// fmt.Println(solution)
 
-	fmt.Println("Lagrangian step...")
+	fmt.Println("Branch and bound lagrangian...")
 	solution, err := instance.SolveWithLagrangianRelaxation()
 	if err != nil {
 		log.Fatal(err)

@@ -8,20 +8,22 @@ import (
 )
 
 type SCPCSInstance struct {
-	NumElements int
-	NumSubsets  int
-	Subsets     *mat.Dense
-	Costs       *mat.VecDense
-	Conflicts   *mat.Dense
+	NumElements   int
+	NumSubsets    int
+	Subsets       *mat.Dense
+	Costs         *mat.VecDense
+	Conflicts     *mat.Dense
+	ConflictsList [][]int
 }
 
 type SCPCSSolution struct {
-	SelectedSubsets *mat.VecDense
-	TotalCost       float64
+	SelectedSubsets  *mat.VecDense
+	TotalCost        float64
+	OptimalGuarantee bool
 }
 
 type SCPCSPartialSolution struct {
-	FixedSubsets    *mat.VecDense
+	FixedSubsets    int
 	SelectedSubsets *mat.VecDense
 	TotalCost       float64
 }
@@ -29,6 +31,21 @@ type SCPCSPartialSolution struct {
 func (sol *SCPCSSolution) String() string {
 	s := new(strings.Builder)
 	s.WriteString(fmt.Sprintf("Total cost: %f\n", sol.TotalCost))
+	s.WriteString("Selected subsets: [ ")
+	for i := 0; i < sol.SelectedSubsets.Len(); i++ {
+		if sol.SelectedSubsets.AtVec(i) > 0.5 {
+			s.WriteString(fmt.Sprint(i))
+			s.WriteString(" ")
+		}
+	}
+	s.WriteString("]")
+	return s.String()
+}
+
+func (sol *SCPCSPartialSolution) String() string {
+	s := new(strings.Builder)
+	s.WriteString(fmt.Sprintf("Total cost: %f\n", sol.TotalCost))
+	s.WriteString(fmt.Sprintln("Fixed subsets:", sol.FixedSubsets))
 	s.WriteString("Selected subsets: [ ")
 	for i := 0; i < sol.SelectedSubsets.Len(); i++ {
 		if sol.SelectedSubsets.AtVec(i) > 0.5 {
@@ -54,6 +71,11 @@ func (inst *SCPCSInstance) String() string {
 			}
 		}
 		s.WriteRune('\n')
+	}
+
+	s.WriteString("Conflicts:\n")
+	for _, pair := range inst.ConflictsList {
+		s.WriteString(fmt.Sprintf("%v\tCost: %f\n", pair, inst.Conflicts.At(pair[0], pair[1])))
 	}
 
 	return s.String()

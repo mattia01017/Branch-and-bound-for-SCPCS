@@ -17,15 +17,13 @@ type SCPCSInstance struct {
 }
 
 type SCPCSSolution struct {
-	SelectedSubsets  *mat.VecDense
-	TotalCost        float64
-	OptimalGuarantee bool
+	SelectedSubsets *mat.VecDense
+	TotalCost       float64
 }
 
 type SCPCSPartialSolution struct {
 	FixedSubsets    int
 	SelectedSubsets *mat.VecDense
-	TotalCost       float64
 }
 
 func (sol *SCPCSSolution) String() string {
@@ -44,7 +42,6 @@ func (sol *SCPCSSolution) String() string {
 
 func (sol *SCPCSPartialSolution) String() string {
 	s := new(strings.Builder)
-	s.WriteString(fmt.Sprintf("Total cost: %f\n", sol.TotalCost))
 	s.WriteString(fmt.Sprintln("Fixed subsets:", sol.FixedSubsets))
 	s.WriteString("Selected subsets: [ ")
 	for i := 0; i < sol.SelectedSubsets.Len(); i++ {

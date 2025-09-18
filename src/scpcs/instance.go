@@ -116,7 +116,7 @@ func LoadInstance(filename string, conflictThreshold int) (*SCPCSInstance, error
 
 func main() {
 	fmt.Println("Loading instance...")
-	instance, err := LoadInstance("data/scpcyc06-3.txt", 0)
+	instance, err := LoadInstance("data/test.txt", 1)
 	if err != nil {
 		log.Fatal(err)
 	}

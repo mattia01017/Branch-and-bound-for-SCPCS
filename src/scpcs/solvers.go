@@ -25,7 +25,6 @@ func (inst *SCPCSInstance) runMIPSolver(lp *highs.Model) (*SCPCSSolution, error)
 
 func (inst *SCPCSInstance) defBaseSCP(lp *highs.Model) {
 	numCols := inst.NumSubsets + len(inst.ConflictsList)
-	infinity := math.Inf(1)
 
 	lp.VarTypes = make([]highs.VariableType, numCols)
 	lp.ColLower = make([]float64, numCols)
@@ -43,19 +42,19 @@ func (inst *SCPCSInstance) defBaseSCP(lp *highs.Model) {
 	}
 
 	lp.ColCosts = row
-
+	infinity := math.Inf(1)
 	for i := range inst.NumElements {
 		lp.AddDenseRow(1, inst.Subsets.RawRowView(i), infinity)
 	}
 }
 
-func (inst *SCPCSInstance) defConflicts(lp *highs.Model, insertedRows int) {
-	for i, conflict := range inst.ConflictsList {
+func (inst *SCPCSInstance) defConflicts(lp *highs.Model, rowsOffset int) {
+	for i, pair := range inst.ConflictsList {
 		lp.ConstMatrix = append(
 			lp.ConstMatrix,
-			highs.Nonzero{Row: insertedRows + i, Col: conflict[0], Val: 1},
-			highs.Nonzero{Row: insertedRows + i, Col: conflict[1], Val: 1},
-			highs.Nonzero{Row: insertedRows + i, Col: inst.NumSubsets + i, Val: -1},
+			highs.Nonzero{Row: rowsOffset + i, Col: pair[0], Val: 1},
+			highs.Nonzero{Row: rowsOffset + i, Col: pair[1], Val: 1},
+			highs.Nonzero{Row: rowsOffset + i, Col: inst.NumSubsets + i, Val: -1},
 		)
 	}
 
@@ -64,7 +63,6 @@ func (inst *SCPCSInstance) defConflicts(lp *highs.Model, insertedRows int) {
 	for i := range ub {
 		ub[i] = 1
 	}
-
 	lp.RowUpper = append(lp.RowUpper, ub...)
 	lp.RowLower = append(lp.RowLower, lb...)
 }

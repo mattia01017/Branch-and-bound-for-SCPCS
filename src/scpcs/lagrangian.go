@@ -3,72 +3,79 @@ package main
 import (
 	"fmt"
 	"math"
+	"slices"
+	"time"
 
 	"github.com/lanl/highs"
 	"gonum.org/v1/gonum/mat"
 	"gopkg.in/dnaeon/go-priorityqueue.v1"
 )
 
-func (inst *SCPCSInstance) defLagriangianRelaxation() *highs.Model {
+const eps = 1e-8
+
+func almostEqual(a, b float64) bool {
+	return math.Abs(a-b) < eps
+}
+
+func (inst *SCPCSInstance) defLagrangianRelaxation() *highs.Model {
 	numCols := inst.NumSubsets + len(inst.ConflictsList)
 	lp := new(highs.Model)
 
-	integrality := make([]highs.VariableType, numCols)
-	lb := make([]float64, numCols)
-	ub := make([]float64, numCols)
+	lp.VarTypes = make([]highs.VariableType, numCols)
 	for j := range numCols {
-		integrality[j] = highs.IntegerType
-		ub[j] = 1
+		lp.VarTypes[j] = highs.IntegerType
 	}
-	lp.ColLower = lb
-	lp.ColUpper = ub
-	lp.VarTypes = integrality
 
 	inst.defConflicts(lp, 0)
 	return lp
 }
 
-func (inst *SCPCSInstance) optimizeLagrangian(lp *highs.Model, partialSol *SCPCSPartialSolution, lambda *mat.VecDense) (*SCPCSSolution, error) {
-	lp.ColCosts = inst.computeObjCoeff(lambda)
-	lp.ColLower = make([]float64, inst.NumSubsets+len(inst.ConflictsList))
-	lp.ColUpper = make([]float64, inst.NumSubsets+len(inst.ConflictsList))
-	for j := range inst.NumSubsets {
-		if j < partialSol.FixedSubsets {
-			lp.ColLower[j] = partialSol.SelectedSubsets.At(j, 0)
-			lp.ColUpper[j] = partialSol.SelectedSubsets.At(j, 0)
-		} else {
-			lp.ColLower[j] = 0
-			lp.ColUpper[j] = 1
+func (inst *SCPCSInstance) checkLagrangianOptimality(sol *SCPCSSolution, lambda *mat.VecDense) bool {
+	Ax := mat.NewVecDense(inst.NumElements, nil)
+	Ax.MulVec(inst.Subsets, sol.SelectedSubsets)
+	for i := range inst.NumElements {
+		if Ax.At(i, 0) < 1 || !almostEqual(0, lambda.At(i, 0)*(1.0-Ax.At(i, 0))) {
+			return false
 		}
 	}
+	return true
+}
 
-	lp.Offset = 0
-	b := mat.NewVecDense(inst.NumElements, nil)
-	for i := range inst.NumElements {
-		b.SetVec(i, 1)
+func (inst *SCPCSInstance) optimizeLagrangianPrimal(lp *highs.Model, partialSol *SCPCSPartialSolution, lambda *mat.VecDense) (*SCPCSSolution, error) {
+	lp.ColCosts = inst.getLagrangianCosts(lambda)
+	lp.ColLower = make([]float64, inst.NumSubsets+len(inst.ConflictsList))
+	lp.ColUpper = make([]float64, inst.NumSubsets+len(inst.ConflictsList))
+	for j := range partialSol.FixedSubsets {
+		lp.ColLower[j] = partialSol.SelectedSubsets.At(j, 0)
+		lp.ColUpper[j] = partialSol.SelectedSubsets.At(j, 0)
 	}
-	lp.Offset += mat.Dot(lambda, b)
+	for j := partialSol.FixedSubsets; j < len(lp.ColLower); j++ {
+		lp.ColLower[j] = 0
+		lp.ColUpper[j] = 1
+	}
 
+	lp.Offset = mat.Sum(lambda)
 	sol, err := inst.runMIPSolver(lp)
 	if err != nil {
 		return nil, err
 	}
+
 	return sol, nil
 }
 
-func (inst *SCPCSInstance) computeObjCoeff(lambda *mat.VecDense) []float64 {
+func (inst *SCPCSInstance) getLagrangianCosts(lambda *mat.VecDense) []float64 {
 	c := mat.NewVecDense(inst.NumSubsets, nil)
 	prod := mat.NewVecDense(inst.NumSubsets, nil)
 	prod.MulVec(inst.Subsets.T(), lambda)
-	c.AddVec(inst.Costs, prod)
+	c.SubVec(inst.Costs, prod)
 
 	conflictCosts := make([]float64, len(inst.ConflictsList))
-	for i, conflict := range inst.ConflictsList {
-		conflictCosts[i] = inst.Conflicts.At(conflict[0], conflict[1])
+	for i, pair := range inst.ConflictsList {
+		conflictCosts[i] = inst.Conflicts.At(pair[0], pair[1])
 	}
-	objCoeff := make([]float64, inst.NumSubsets+len(conflictCosts))
-	copy(objCoeff, c.RawVector().Data)
-	copy(objCoeff[inst.NumSubsets:], conflictCosts)
+
+	objCoeff := slices.Clone(c.RawVector().Data)
+	objCoeff = append(objCoeff, conflictCosts...)
 	return objCoeff
 }
 
@@ -91,31 +98,16 @@ func (inst *SCPCSInstance) checkFeasibility(selectedMap map[int]bool) bool {
 func (inst *SCPCSInstance) greedyRepair(initialSol *SCPCSSolution) (*SCPCSSolution, error) {
 	selectedMap := make(map[int]bool)
 	costs := mat.NewVecDense(inst.NumSubsets, nil)
-	totalCost := initialSol.TotalCost
+	costs.CloneFromVec(inst.Costs)
 	pq := priorityqueue.New[int, float64](priorityqueue.MinHeap)
 
 	for i := range inst.NumSubsets {
+		costs.SetVec(i, inst.Costs.At(i, 0))
 		if initialSol.SelectedSubsets.At(i, 0) > 0.5 {
-			selectedMap[i] = true
+			pq.Put(i, -1)
 		} else {
 			pq.Put(i, inst.Costs.At(i, 0))
 		}
-	}
-
-	for i := range inst.NumSubsets {
-		if initialSol.SelectedSubsets.At(i, 0) > 0.5 {
-			for j := range inst.NumSubsets {
-				if initialSol.SelectedSubsets.At(i, 0) < 0.5 && inst.Conflicts.At(j, i) > 0 {
-					cost := inst.Costs.At(j, 0) + inst.Conflicts.At(i, j)
-					costs.SetVec(j, cost)
-					pq.Update(j, cost)
-				}
-			}
-		}
-	}
-
-	if inst.checkFeasibility(selectedMap) {
-		return nil, fmt.Errorf("Optimal")
 	}
 
 	for !inst.checkFeasibility(selectedMap) {
@@ -124,9 +116,7 @@ func (inst *SCPCSInstance) greedyRepair(initialSol *SCPCSSolution) (*SCPCSSoluti
 		}
 
 		item := pq.Get()
-
 		selectedMap[item.Value] = true
-		totalCost += item.Priority
 
 		for i := range inst.NumSubsets {
 			if inst.Conflicts.At(i, item.Value) > 0 {
@@ -139,113 +129,126 @@ func (inst *SCPCSInstance) greedyRepair(initialSol *SCPCSSolution) (*SCPCSSoluti
 
 	selectedSubset := mat.NewVecDense(inst.NumSubsets, nil)
 
-	sol := &SCPCSSolution{
+	totalCost := 0.0
+	for i := range selectedMap {
+		selectedSubset.SetVec(i, 1)
+		totalCost += costs.At(i, 0)
+	}
+
+	return &SCPCSSolution{
 		SelectedSubsets: selectedSubset,
 		TotalCost:       totalCost,
-	}
-
-	for i := range selectedMap {
-		sol.SelectedSubsets.SetVec(i, 1)
-	}
-
-	return sol, nil
+	}, nil
 }
 
-func (inst *SCPCSInstance) subgradientOptimization(lp *highs.Model, partialSol *SCPCSPartialSolution) (*SCPCSSolution, error) {
+func (inst *SCPCSInstance) optimizeSubgradient(lp *highs.Model, partialSol *SCPCSPartialSolution, ub float64) (*SCPCSSolution, bool, error) {
 	lambda := mat.NewVecDense(inst.NumElements, nil)
-	for i := range inst.NumElements {
-		lambda.SetVec(i, 1)
-	}
-	step := 1.0
-	rho := 0.8
-
+	pi := 2.0
 	lastOptValue := math.Inf(1)
-	lastCurrDiff := math.Inf(1)
+	var noImprovementRounds int
+	var lastCurrDiff float64
 	var sol *SCPCSSolution
 	var err error
-	for lastCurrDiff > 1e-5 {
-		sol, err = inst.optimizeLagrangian(lp, partialSol, lambda)
-		if err != nil {
-			return nil, err
-		}
 
-		violation := mat.NewVecDense(inst.NumElements, nil)
-		for i := range inst.NumElements {
-			violation.SetVec(i, 1)
+	for {
+		sol, err = inst.optimizeLagrangianPrimal(lp, partialSol, lambda)
+		if err != nil {
+			return nil, false, err
 		}
 
 		Ax := mat.NewVecDense(inst.NumElements, nil)
 		Ax.MulVec(inst.Subsets, sol.SelectedSubsets)
-		violation.SubVec(violation, Ax)
 
-		for i := range inst.NumElements {
-			lambda.SetVec(i, math.Max(0, lambda.At(i, 0)-step*violation.At(i, 0)))
+		sqSum := 0.0
+		violations := mat.NewVecDense(inst.NumElements, nil)
+		for j := range inst.NumElements {
+			violations.SetVec(j, 1.0-Ax.At(j, 0))
+			sqSum += math.Pow(math.Max(0, violations.At(j, 0)), 2)
 		}
 
-		lastCurrDiff = lastOptValue - sol.TotalCost
+		if sqSum == 0 {
+			sqSum = 1
+		}
+
+		lastCurrDiff = math.Abs(sol.TotalCost - lastOptValue)
 		lastOptValue = sol.TotalCost
-		step *= rho
+
+		if lastCurrDiff < 0.05 {
+			if noImprovementRounds == 5 {
+				break
+			}
+			noImprovementRounds++
+		} else {
+			noImprovementRounds = 0
+		}
+
+		step := pi * (ub - sol.TotalCost) / sqSum
+		pi /= 2
+		for j := range lambda.Len() {
+			lambda.SetVec(j, math.Max(0, lambda.At(j, 0)+step*violations.At(j, 0)))
+		}
 	}
-	return sol, nil
+	return sol, inst.checkLagrangianOptimality(sol, lambda), nil
 }
 
 func (inst *SCPCSInstance) fixSubsetInPartialSol(partialSol *SCPCSPartialSolution, include bool) *SCPCSPartialSolution {
 	newPartialSol := &SCPCSPartialSolution{
 		FixedSubsets:    partialSol.FixedSubsets + 1,
 		SelectedSubsets: mat.VecDenseCopyOf(partialSol.SelectedSubsets),
-		TotalCost:       partialSol.TotalCost,
 	}
 	if include {
 		newPartialSol.SelectedSubsets.SetVec(partialSol.FixedSubsets, 1)
-		newPartialSol.TotalCost += mat.Dot(partialSol.SelectedSubsets, inst.Costs) + inst.Costs.At(partialSol.FixedSubsets, 0)
 	}
 	return newPartialSol
 }
 
 func (inst *SCPCSInstance) SolveWithLagrangianRelaxation() (*SCPCSSolution, error) {
-	nodesDeque := NewStack[*SCPCSPartialSolution]()
-	nodesDeque.Push(&SCPCSPartialSolution{
-		SelectedSubsets: mat.NewVecDense(inst.NumSubsets, nil),
-	})
+	emptyVec := mat.NewVecDense(inst.NumSubsets, nil)
+	nodesDeque := priorityqueue.New[*SCPCSPartialSolution, float64](priorityqueue.MinHeap)
+	nodesDeque.Put(&SCPCSPartialSolution{SelectedSubsets: emptyVec}, 0)
 
-	lp := inst.defLagriangianRelaxation()
+	lp := inst.defLagrangianRelaxation()
 
-	var sol *SCPCSSolution
-	var err error
-	primalBound := math.Inf(1)
-	for nodesDeque.Size() > 0 {
-		node := nodesDeque.Pop()
+	var start time.Time
+	firstSol, _ := inst.greedyRepair(&SCPCSSolution{SelectedSubsets: emptyVec})
+	bestPrimalBound := firstSol.TotalCost
+	for nodesDeque.Len() > 0 {
+		node := nodesDeque.Get()
 
-		sol, err = inst.subgradientOptimization(lp, node)
+		start = time.Now()
+		sol, optimal, err := inst.optimizeSubgradient(lp, node.Value, bestPrimalBound)
+		fmt.Println(sol)
+		fmt.Println("Subgradient opt:", time.Since(start))
+		if optimal {
+			return sol, nil
+		}
 		if err != nil {
 			if err.Error() == "Infeasible" {
 				continue
 			}
 			return nil, err
 		}
-		if sol.TotalCost > primalBound {
+		dualBound := sol.TotalCost
+		if dualBound > bestPrimalBound {
 			continue
 		}
 
 		sol, err = inst.greedyRepair(sol)
 		if err != nil {
-			if err.Error() == "Infeasible" {
-				continue
-			} else if err.Error() == "Optimal" {
-				return sol, nil
-			}
 			return nil, err
 		}
-		if sol.TotalCost < primalBound {
-			primalBound = sol.TotalCost
+		if sol.TotalCost < bestPrimalBound {
+			bestPrimalBound = sol.TotalCost
+		}
+		if sol.TotalCost <= dualBound {
+			return sol, nil
 		}
 
-		if node.FixedSubsets != inst.NumSubsets {
-			nodesDeque.Push(inst.fixSubsetInPartialSol(node, false))
-			nodesDeque.Push(inst.fixSubsetInPartialSol(node, true))
+		if node.Value.FixedSubsets != inst.NumSubsets {
+			nodesDeque.Put(inst.fixSubsetInPartialSol(node.Value, false), dualBound)
+			nodesDeque.Put(inst.fixSubsetInPartialSol(node.Value, true), dualBound)
 		}
-
 	}
 
-	return sol, nil
+	return nil, fmt.Errorf("couldn't find optimal solution")
 }

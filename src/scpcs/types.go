@@ -7,7 +7,7 @@ import (
 	"gonum.org/v1/gonum/mat"
 )
 
-type SCPCSInstance struct {
+type Instance struct {
 	NumElements   int
 	NumSubsets    int
 	Subsets       *mat.Dense
@@ -16,17 +16,18 @@ type SCPCSInstance struct {
 	ConflictsList [][]int
 }
 
-type SCPCSSolution struct {
+type Solution struct {
 	SelectedSubsets *mat.VecDense
 	TotalCost       float64
 }
 
-type SCPCSPartialSolution struct {
+type Node struct {
+	CurrentSolution *Solution
+	DualBound       float64
 	FixedSubsets    int
-	SelectedSubsets *mat.VecDense
 }
 
-func (sol *SCPCSSolution) String() string {
+func (sol *Solution) String() string {
 	s := new(strings.Builder)
 	s.WriteString(fmt.Sprintf("Total cost: %f\n", sol.TotalCost))
 	s.WriteString("Selected subsets: [ ")
@@ -40,21 +41,22 @@ func (sol *SCPCSSolution) String() string {
 	return s.String()
 }
 
-func (sol *SCPCSPartialSolution) String() string {
+func (sol *Node) String() string {
 	s := new(strings.Builder)
-	s.WriteString(fmt.Sprintln("Fixed subsets:", sol.FixedSubsets))
+	fmt.Fprintln(s, "Fixed subsets:", sol.FixedSubsets)
 	s.WriteString("Selected subsets: [ ")
-	for i := 0; i < sol.SelectedSubsets.Len(); i++ {
-		if sol.SelectedSubsets.AtVec(i) > 0.5 {
-			s.WriteString(fmt.Sprint(i))
+	for i := 0; i < sol.CurrentSolution.SelectedSubsets.Len(); i++ {
+		if sol.CurrentSolution.SelectedSubsets.AtVec(i) > 0.5 {
+			fmt.Fprint(s, i)
 			s.WriteString(" ")
 		}
 	}
-	s.WriteString("]")
+	s.WriteString("]\n")
+	fmt.Fprint(s, "Dual bound: ", sol.DualBound)
 	return s.String()
 }
 
-func (inst *SCPCSInstance) String() string {
+func (inst *Instance) String() string {
 	s := new(strings.Builder)
 	s.WriteString(fmt.Sprintf("N. elements: %d\n", inst.NumElements))
 	s.WriteString(fmt.Sprintf("N. sets: %d\n", inst.Subsets.RawMatrix().Cols))

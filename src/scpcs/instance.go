@@ -21,7 +21,7 @@ func errorCoalesce(args ...error) error {
 	return nil
 }
 
-func (inst *SCPCSInstance) parseFirstLine(scanner *bufio.Scanner) error {
+func (inst *Instance) parseFirstLine(scanner *bufio.Scanner) error {
 	scanner.Scan()
 	line := strings.Fields(scanner.Text())
 	numElements, err := strconv.Atoi(line[0])
@@ -41,7 +41,7 @@ func (inst *SCPCSInstance) parseFirstLine(scanner *bufio.Scanner) error {
 	return nil
 }
 
-func (inst *SCPCSInstance) parseSecondLine(scanner *bufio.Scanner) error {
+func (inst *Instance) parseSecondLine(scanner *bufio.Scanner) error {
 	scanner.Scan()
 	line := strings.Fields(scanner.Text())
 	for i, tok := range line {
@@ -54,7 +54,7 @@ func (inst *SCPCSInstance) parseSecondLine(scanner *bufio.Scanner) error {
 	return nil
 }
 
-func (inst *SCPCSInstance) parseIncompSets(scanner *bufio.Scanner) error {
+func (inst *Instance) parseIncompSets(scanner *bufio.Scanner) error {
 	i := 0
 	for scanner.Scan() {
 		line := strings.Fields(scanner.Text())[1:]
@@ -70,7 +70,7 @@ func (inst *SCPCSInstance) parseIncompSets(scanner *bufio.Scanner) error {
 	return nil
 }
 
-func (inst *SCPCSInstance) computeConflicts(conflictThreshold int) error {
+func (inst *Instance) computeConflicts(conflictThreshold int) error {
 	inst.Conflicts = mat.NewDense(inst.NumSubsets, inst.NumSubsets, nil)
 	inst.ConflictsList = make([][]int, 0)
 	for i := range inst.NumSubsets {
@@ -93,8 +93,8 @@ func (inst *SCPCSInstance) computeConflicts(conflictThreshold int) error {
 	return nil
 }
 
-func LoadInstance(filename string, conflictThreshold int) (*SCPCSInstance, error) {
-	inst := new(SCPCSInstance)
+func LoadInstance(filename string, conflictThreshold int) (*Instance, error) {
+	inst := new(Instance)
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, err
@@ -116,7 +116,7 @@ func LoadInstance(filename string, conflictThreshold int) (*SCPCSInstance, error
 
 func main() {
 	fmt.Println("Loading instance...")
-	instance, err := LoadInstance("data/test.txt", 1)
+	instance, err := LoadInstance("data/test3.txt", 1)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -132,4 +132,31 @@ func main() {
 		log.Fatal(err)
 	}
 	fmt.Println(solution)
+
+	cost := mat.Dot(solution.SelectedSubsets, instance.Costs)
+	var sol []int
+	for i := range instance.NumSubsets {
+		if solution.SelectedSubsets.At(i, 0) > 0.5 {
+			sol = append(sol, i)
+		}
+	}
+
+	for i := range sol {
+		for j := i + 1; j < len(sol); j++ {
+			cost += instance.Conflicts.At(sol[i], sol[j])
+		}
+	}
+
+	Ax := mat.NewVecDense(instance.NumElements, nil)
+	Ax.MulVec(instance.Subsets, solution.SelectedSubsets)
+	feasible := true
+	for _, x := range Ax.RawVector().Data {
+		if x < 0.5 {
+			feasible = false
+			break
+		}
+	}
+
+	fmt.Println("Feasible", feasible)
+	fmt.Println(cost)
 }

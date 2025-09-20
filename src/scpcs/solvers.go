@@ -2,13 +2,12 @@ package main
 
 import (
 	"fmt"
-	"math"
 
 	"github.com/lanl/highs"
 	"gonum.org/v1/gonum/mat"
 )
 
-func (inst *SCPCSInstance) runMIPSolver(lp *highs.Model) (*SCPCSSolution, error) {
+func (inst *Instance) runMIPSolver(lp *highs.Model) (*Solution, error) {
 	solution, err := lp.Solve()
 	if err != nil {
 		return nil, err
@@ -17,13 +16,13 @@ func (inst *SCPCSInstance) runMIPSolver(lp *highs.Model) (*SCPCSSolution, error)
 		return nil, fmt.Errorf("%v", solution.Status.String())
 	}
 
-	return &SCPCSSolution{
+	return &Solution{
 		SelectedSubsets: mat.NewVecDense(inst.NumSubsets, solution.ColumnPrimal[:inst.NumSubsets]),
 		TotalCost:       solution.Objective,
 	}, nil
 }
 
-func (inst *SCPCSInstance) defBaseSCP(lp *highs.Model) {
+func (inst *Instance) defBaseSCP(lp *highs.Model) {
 	numCols := inst.NumSubsets + len(inst.ConflictsList)
 
 	lp.VarTypes = make([]highs.VariableType, numCols)
@@ -42,13 +41,12 @@ func (inst *SCPCSInstance) defBaseSCP(lp *highs.Model) {
 	}
 
 	lp.ColCosts = row
-	infinity := math.Inf(1)
 	for i := range inst.NumElements {
-		lp.AddDenseRow(1, inst.Subsets.RawRowView(i), infinity)
+		lp.AddDenseRow(1, inst.Subsets.RawRowView(i), float64(inst.NumElements))
 	}
 }
 
-func (inst *SCPCSInstance) defConflicts(lp *highs.Model, rowsOffset int) {
+func (inst *Instance) defConflicts(lp *highs.Model, rowsOffset int) {
 	for i, pair := range inst.ConflictsList {
 		lp.ConstMatrix = append(
 			lp.ConstMatrix,
@@ -67,14 +65,14 @@ func (inst *SCPCSInstance) defConflicts(lp *highs.Model, rowsOffset int) {
 	lp.RowLower = append(lp.RowLower, lb...)
 }
 
-func (inst *SCPCSInstance) defSCPCS() *highs.Model {
+func (inst *Instance) defSCPCS() *highs.Model {
 	lp := new(highs.Model)
 	inst.defBaseSCP(lp)
 	inst.defConflicts(lp, inst.NumElements)
 	return lp
 }
 
-func (inst *SCPCSInstance) Solve() (*SCPCSSolution, error) {
+func (inst *Instance) Solve() (*Solution, error) {
 	lp := inst.defSCPCS()
 	return inst.runMIPSolver(lp)
 }

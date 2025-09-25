@@ -1,4 +1,4 @@
-package main
+package scpcs
 
 type linkedListNode[T any] struct {
 	value T

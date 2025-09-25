@@ -1,9 +1,8 @@
-package main
+package scpcs
 
 import (
 	"bufio"
 	"fmt"
-	"log"
 	"math"
 	"os"
 	"strconv"
@@ -73,17 +72,20 @@ func (inst *Instance) parseIncompSets(scanner *bufio.Scanner) error {
 func (inst *Instance) computeConflicts(conflictThreshold int) error {
 	inst.Conflicts = mat.NewDense(inst.NumSubsets, inst.NumSubsets, nil)
 	inst.ConflictsList = make([][]int, 0)
+	coeffs := mat.NewVecDense(inst.NumSubsets, nil)
+	for i := range inst.NumSubsets {
+		coeffs.SetVec(i, inst.Costs.At(i, 0)/mat.Sum(inst.Subsets.ColView(i)))
+	}
+	coeff := math.Round(mat.Max(coeffs))
+	if coeff == 0 {
+		coeff = 1
+	}
 	for i := range inst.NumSubsets {
 		for j := i + 1; j < inst.NumSubsets; j++ {
 			intsersectionSize := mat.Dot(inst.Subsets.ColView(i), (inst.Subsets.ColView(j)))
-			conflictSize := int(math.Max(float64(intsersectionSize)-float64(conflictThreshold), 0))
-			if conflictSize > 0 {
-				conflictCost := int(math.Round(
-					math.Max(
-						float64(inst.Costs.At(i, 0))/float64(mat.Sum(inst.Subsets.ColView(i))),
-						1.0,
-					),
-				))
+			conflictSize := math.Round(intsersectionSize) - float64(conflictThreshold)
+			if conflictSize > EPS {
+				conflictCost := coeff * conflictSize
 				inst.Conflicts.Set(i, j, float64(conflictCost))
 				inst.Conflicts.Set(j, i, float64(conflictCost))
 				inst.ConflictsList = append(inst.ConflictsList, []int{i, j})
@@ -112,51 +114,4 @@ func LoadInstance(filename string, conflictThreshold int) (*Instance, error) {
 		return nil, err
 	}
 	return inst, nil
-}
-
-func main() {
-	fmt.Println("Loading instance...")
-	instance, err := LoadInstance("data/test3.txt", 1)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// fmt.Println("Solving instance...")
-	// solution, err := instance.Solve()
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	fmt.Println("Branch and bound lagrangian...")
-	solution, err := instance.SolveWithLagrangianRelaxation()
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(solution)
-
-	cost := mat.Dot(solution.SelectedSubsets, instance.Costs)
-	var sol []int
-	for i := range instance.NumSubsets {
-		if solution.SelectedSubsets.At(i, 0) > 0.5 {
-			sol = append(sol, i)
-		}
-	}
-
-	for i := range sol {
-		for j := i + 1; j < len(sol); j++ {
-			cost += instance.Conflicts.At(sol[i], sol[j])
-		}
-	}
-
-	Ax := mat.NewVecDense(instance.NumElements, nil)
-	Ax.MulVec(instance.Subsets, solution.SelectedSubsets)
-	feasible := true
-	for _, x := range Ax.RawVector().Data {
-		if x < 0.5 {
-			feasible = false
-			break
-		}
-	}
-
-	fmt.Println("Feasible", feasible)
-	fmt.Println(cost)
 }

@@ -1,4 +1,4 @@
-package main
+package scpcs
 
 import (
 	"fmt"
@@ -7,13 +7,13 @@ import (
 	"gonum.org/v1/gonum/mat"
 )
 
-func (inst *Instance) runMIPSolver(lp *highs.Model) (*Solution, error) {
+func (inst *Instance) runHighsSolver(lp *highs.Model) (*Solution, error) {
 	solution, err := lp.Solve()
 	if err != nil {
 		return nil, err
 	}
 	if solution.Status != highs.Optimal {
-		return nil, fmt.Errorf("%v", solution.Status.String())
+		return nil, fmt.Errorf("status: %v", solution.Status.String())
 	}
 
 	return &Solution{
@@ -74,5 +74,5 @@ func (inst *Instance) defSCPCS() *highs.Model {
 
 func (inst *Instance) Solve() (*Solution, error) {
 	lp := inst.defSCPCS()
-	return inst.runMIPSolver(lp)
+	return inst.runHighsSolver(lp)
 }

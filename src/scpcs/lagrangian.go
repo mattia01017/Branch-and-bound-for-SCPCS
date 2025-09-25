@@ -1,4 +1,4 @@
-package main
+package scpcs
 
 import (
 	"fmt"
@@ -36,8 +36,9 @@ func (inst *Instance) defLagrangianRelaxation() *highs.Model {
 	numCols := inst.NumSubsets + len(inst.ConflictsList)
 	lp := new(highs.Model)
 
+	lp.ConstMatrix = make([]highs.Nonzero, 1)
 	lp.VarTypes = make([]highs.VariableType, numCols)
-	for j := range numCols {
+	for j := range inst.NumSubsets {
 		lp.VarTypes[j] = highs.IntegerType
 	}
 
@@ -45,31 +46,7 @@ func (inst *Instance) defLagrangianRelaxation() *highs.Model {
 	return lp
 }
 
-func (inst *Instance) checkComplementarySlackness(sol *Solution, lambda *mat.VecDense) bool {
-	Ax := mat.NewVecDense(inst.NumElements, nil)
-	Ax.MulVec(inst.Subsets, sol.SelectedSubsets)
-	for i := range inst.NumElements {
-		if Ax.At(i, 0) < 1-EPS || !almostEqual(0, lambda.At(i, 0)*(1.0-Ax.At(i, 0))) {
-			return false
-		}
-	}
-	return true
-}
-
-func (inst *Instance) greedyLagrangian(partialSol *Node, lambda *mat.VecDense) {
-	costs := mat.NewVecDense(inst.NumSubsets, nil)
-	prod := mat.NewVecDense(inst.NumSubsets, nil)
-	prod.MulVec(inst.Subsets.T(), lambda)
-	costs.SubVec(inst.Costs, prod)
-
-	queue := priorityqueue.New[int, float64](priorityqueue.MinHeap)
-	for i := range inst.NumSubsets {
-		queue.Put(i, inst.Costs.At(i, 0))
-	}
-
-}
-
-func (inst *Instance) optimizeLagrangianPrimal(lp *highs.Model, partialSol *Node, lambda *mat.VecDense) (*Solution, error) {
+func (inst *Instance) solveLagrangianPrimal(lp *highs.Model, partialSol *Node, lambda *mat.VecDense) (*Solution, error) {
 	lp.ColCosts = inst.getLagrangianCosts(lambda)
 	lp.ColLower = make([]float64, inst.NumSubsets+len(inst.ConflictsList))
 	lp.ColUpper = make([]float64, inst.NumSubsets+len(inst.ConflictsList))
@@ -83,7 +60,7 @@ func (inst *Instance) optimizeLagrangianPrimal(lp *highs.Model, partialSol *Node
 	}
 
 	lp.Offset = mat.Sum(lambda)
-	sol, err := inst.runMIPSolver(lp)
+	sol, err := inst.runHighsSolver(lp)
 	if err != nil {
 		return nil, err
 	}
@@ -107,22 +84,6 @@ func (inst *Instance) getLagrangianCosts(lambda *mat.VecDense) []float64 {
 	return objCoeff
 }
 
-func (inst *Instance) checkMapFeasibility(selectedMap map[int]bool) bool {
-	for i := range inst.NumElements {
-		found := false
-		for j := range selectedMap {
-			if inst.Subsets.At(i, j) > 0.5 {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-	return true
-}
-
 func (inst *Instance) isFeasible(selected *mat.VecDense) bool {
 	Ax := mat.NewVecDense(inst.NumElements, nil)
 	Ax.MulVec(inst.Subsets, selected)
@@ -136,10 +97,11 @@ func (inst *Instance) isFeasible(selected *mat.VecDense) bool {
 }
 
 func (inst *Instance) greedyRepair(node *Node) (*Solution, error) {
-	selectedMap := make(map[int]bool)
 	costs := mat.NewVecDense(inst.NumSubsets, nil)
 	costs.CloneFromVec(inst.Costs)
 	pq := priorityqueue.New[int, float64](priorityqueue.MinHeap)
+	selectedSubset := mat.NewVecDense(inst.NumSubsets, nil)
+	selectedSubset.CloneFromVec(node.CurrentSolution.SelectedSubsets)
 
 	for i := range node.FixedSubsets {
 		costs.SetVec(i, inst.Costs.At(i, 0))
@@ -157,13 +119,13 @@ func (inst *Instance) greedyRepair(node *Node) (*Solution, error) {
 		}
 	}
 
-	for !inst.checkMapFeasibility(selectedMap) {
+	for !inst.isFeasible(selectedSubset) {
 		if pq.Len() == 0 {
 			return nil, fmt.Errorf("Infeasible")
 		}
 
 		item := pq.Get()
-		selectedMap[item.Value] = true
+		selectedSubset.SetVec(item.Value, 1)
 
 		for i := range inst.NumSubsets {
 			if inst.Conflicts.At(i, item.Value) > 0 {
@@ -176,12 +138,11 @@ func (inst *Instance) greedyRepair(node *Node) (*Solution, error) {
 		}
 	}
 
-	selectedSubset := mat.NewVecDense(inst.NumSubsets, nil)
-
 	totalCost := 0.0
-	for i := range selectedMap {
-		selectedSubset.SetVec(i, 1)
-		totalCost += costs.At(i, 0)
+	for i := range inst.NumSubsets {
+		if selectedSubset.At(i, 0) > 0.5 {
+			totalCost += costs.At(i, 0)
+		}
 	}
 
 	return &Solution{
@@ -190,52 +151,48 @@ func (inst *Instance) greedyRepair(node *Node) (*Solution, error) {
 	}, nil
 }
 
-func (inst *Instance) optimizeSubgradient(lp *highs.Model, partialSol *Node, ub float64) (*Solution, error) {
+func (inst *Instance) optimizeSubgradient(lp *highs.Model, partialSol *Node) (*Solution, error) {
 	lambda := mat.NewVecDense(inst.NumElements, nil)
-	pi := 1.0
-	lastOptValue := math.Inf(1)
-	var noImprovementRounds int
-	var lastCurrDiff float64
+	best := &Solution{TotalCost: math.Inf(-1)}
 	var sol *Solution
 	var err error
 
+	noImprovementRounds := 0
+	step := 10.0
+	mult := 0.6
+
 	for {
-		sol, err = inst.optimizeLagrangianPrimal(lp, partialSol, lambda)
+		sol, err = inst.solveLagrangianPrimal(lp, partialSol, lambda)
 		if err != nil {
 			return nil, err
+		}
+		diff := best.TotalCost - sol.TotalCost
+		if diff < 0 {
+			best = sol
+		}
+		if diff < 1e-2 {
+			noImprovementRounds++
+			step *= mult
+		} else {
+			noImprovementRounds = 0
+		}
+
+		if noImprovementRounds == 10 {
+			return best, nil
 		}
 
 		Ax := mat.NewVecDense(inst.NumElements, nil)
 		Ax.MulVec(inst.Subsets, sol.SelectedSubsets)
 
-		sqSum := 1.0
 		violations := mat.NewVecDense(inst.NumElements, nil)
 		for j := range inst.NumElements {
 			violations.SetVec(j, 1.0-Ax.At(j, 0))
-			sqSum += math.Pow(math.Max(0, violations.At(j, 0)), 2)
 		}
 
-		if sqSum == 0 {
-			sqSum = 1
-		}
-
-		lastCurrDiff = math.Abs(sol.TotalCost - lastOptValue)
-		lastOptValue = sol.TotalCost
-
-		if lastCurrDiff < 0.1 {
-			if noImprovementRounds == 3 {
-				return sol, nil
-			}
-			noImprovementRounds++
-		} else {
-			noImprovementRounds = 0
-		}
-
-		step := pi * math.Abs(ub-sol.TotalCost) / sqSum
-		pi /= 2
 		for j := range lambda.Len() {
 			lambda.SetVec(j, math.Max(0, lambda.At(j, 0)+step*violations.At(j, 0)))
 		}
+
 	}
 }
 
@@ -269,7 +226,7 @@ func (inst *Instance) SolveWithLagrangianRelaxation() (*Solution, error) {
 	}
 
 	primalSol, _ := inst.greedyRepair(initialNode)
-	initialLB, err := inst.optimizeSubgradient(lp, initialNode, primalSol.TotalCost)
+	initialLB, err := inst.optimizeSubgradient(lp, initialNode)
 	if err != nil {
 		return nil, err
 	}
@@ -278,13 +235,13 @@ func (inst *Instance) SolveWithLagrangianRelaxation() (*Solution, error) {
 	}
 	initialNode.DualBound = initialLB.TotalCost
 
-	nodesDeque := priorityqueue.New[*Node, float64](priorityqueue.MinHeap)
+	nodesDeque := priorityqueue.New[*Node, float64](priorityqueue.MaxHeap)
 	nodesDeque.Put(initialNode, 0)
 
 	for nodesDeque.Len() > 0 {
 		node := nodesDeque.Get().Value
 		fmt.Println(node)
-		fmt.Println("UB:", primalSol.TotalCost)
+		fmt.Println("Current UB:", primalSol.TotalCost)
 
 		if node.DualBound >= primalSol.TotalCost {
 			continue
@@ -312,7 +269,7 @@ func (inst *Instance) SolveWithLagrangianRelaxation() (*Solution, error) {
 
 			for _, n := range nodes {
 				go func() {
-					dualSol, err := inst.optimizeSubgradient(cloneLp(lp), n, primalSol.TotalCost)
+					dualSol, err := inst.optimizeSubgradient(cloneLp(lp), n)
 					if err != nil {
 						errorCh <- err
 						return
@@ -343,10 +300,9 @@ func (inst *Instance) SolveWithLagrangianRelaxation() (*Solution, error) {
 			for range nodes {
 				select {
 				case err := <-errorCh:
-					if err.Error() == "Infeasible" {
-						continue
+					if err.Error() != "Infeasible" {
+						return nil, err
 					}
-					return nil, err
 				case repairedSol := <-primalCh:
 					if repairedSol.TotalCost < primalSol.TotalCost {
 						primalSol = repairedSol

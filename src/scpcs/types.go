@@ -25,6 +25,7 @@ type Node struct {
 	CurrentSolution *Solution
 	DualBound       float64
 	FixedSubsets    int
+	LagrangeanMul   *mat.VecDense
 }
 
 func (sol *Solution) String() string {

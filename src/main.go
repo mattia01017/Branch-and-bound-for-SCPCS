@@ -8,11 +8,11 @@ import (
 )
 
 func main() {
-	var solveHighs, solveLagrangian bool
+	var solveHighs, solveLagrangean bool
 	var conflictThreshold int
 
 	flag.BoolVar(&solveHighs, "highs", false, "Solve the problem using the HiGHS solver")
-	flag.BoolVar(&solveLagrangian, "lagrangian", false, "Solve with branch and bound using lagrangian relaxation for dual")
+	flag.BoolVar(&solveLagrangean, "lagrangean", false, "Solve with branch and bound using lagrangean relaxation for dual")
 	flag.IntVar(&conflictThreshold, "threshold", 0, "Define the minimum intersection size between subsets to be considered in conflict")
 
 	flag.Parse()
@@ -22,7 +22,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Must specify at least a path")
 		os.Exit(1)
 	}
-	if !solveHighs && !solveLagrangian {
+	if !solveHighs && !solveLagrangean {
 		fmt.Fprintln(os.Stderr, "Must specify a solving algorithm")
 		os.Exit(1)
 	}
@@ -43,9 +43,9 @@ func main() {
 				fmt.Printf("Instance %v:\n%v\n", p, sol)
 			}
 		}
-		if solveLagrangian {
+		if solveLagrangean {
 			fmt.Printf("Solving %v...\n", p)
-			sol, err := inst.SolveWithLagrangianRelaxation()
+			sol, err := inst.SolveWithLagrangeanRelaxation()
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "An error occured while solving with B&B instance \"%v\": %v\n", p, err)
 			} else {

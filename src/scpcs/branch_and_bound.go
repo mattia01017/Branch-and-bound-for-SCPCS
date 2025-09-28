@@ -3,8 +3,8 @@ package scpcs
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"slices"
-	"time"
 
 	"github.com/lanl/highs"
 	"gonum.org/v1/gonum/mat"
@@ -37,6 +37,13 @@ func almostEqual(a, b float64) bool {
 	return math.Abs(a-b) < eps
 }
 
+func nodeComparator(x, y *Node) int {
+	if x.DualBound < y.DualBound {
+		return 1
+	}
+	return -1
+}
+
 func (inst *Instance) fixSubsetInPartialSol(partialSol *Node, include []bool) *Node {
 	newPartialSol := &Node{
 		FixedSubsets: partialSol.FixedSubsets + len(include),
@@ -58,6 +65,33 @@ func (inst *Instance) fixSubsetInPartialSol(partialSol *Node, include []bool) *N
 	return newPartialSol
 }
 
+func generateChildren(inst *Instance, node *Node) []*Node {
+	treeChildren := int(math.Min(bbTreeChildren, float64(inst.NumSubsets-node.FixedSubsets+1)))
+	nodes := make([]*Node, 0, treeChildren)
+
+	for i := range treeChildren - 2 {
+		flags := make([]bool, i+1)
+		flags[i] = true
+		nodes = append(nodes, inst.fixSubsetInPartialSol(node, flags))
+	}
+	flags := make([]bool, treeChildren-1)
+	nodes = append(nodes, inst.fixSubsetInPartialSol(node, flags))
+	flags[len(flags)-1] = true
+	nodes = append(nodes, inst.fixSubsetInPartialSol(node, flags))
+	return nodes
+}
+
+func (inst *Instance) isLagrangianOptimal(sol *Solution, lambda *mat.VecDense) bool {
+	Ax := mat.NewVecDense(inst.NumElements, nil)
+	Ax.MulVec(inst.Subsets, sol.Subsets)
+	for i := range inst.NumElements {
+		if Ax.At(i, 0) < 1 || !almostEqual(0, lambda.At(i, 0)*(1.0-Ax.At(i, 0))) {
+			return false
+		}
+	}
+	return true
+}
+
 func (inst *Instance) SolveWithLagrangeanRelaxation() (*Solution, error) {
 	lp := inst.defLagrangeanRelaxation()
 	initialNode := &Node{
@@ -66,9 +100,7 @@ func (inst *Instance) SolveWithLagrangeanRelaxation() (*Solution, error) {
 		},
 	}
 
-	t := time.Now()
 	bestPrimalSolution := inst.geneticHeuristic(initialNode, 1000)
-	fmt.Println("Genetic algorithm time:", time.Since(t))
 	fmt.Println("Genetic algorithm primal bound:", bestPrimalSolution.TotalCost)
 
 	initialLB, lambda, err := inst.optimizeSubgradient(lp, initialNode)
@@ -105,12 +137,15 @@ func (inst *Instance) SolveWithLagrangeanRelaxation() (*Solution, error) {
 		errorCh := make(chan error)
 		primalCh := make(chan *Solution)
 		nodesCh := make(chan *Node, len(children))
-
 		for _, n := range children {
 			go func() {
 				dualSol, lambda, err := inst.optimizeSubgradient(cloneLp(lp), n)
 				if err != nil {
 					errorCh <- err
+					return
+				}
+				if inst.isLagrangianOptimal(dualSol, lambda) {
+					errorCh <- fmt.Errorf("Fathom")
 					return
 				}
 
@@ -119,8 +154,19 @@ func (inst *Instance) SolveWithLagrangeanRelaxation() (*Solution, error) {
 
 				repairedSol, err := inst.greedyRepair(n)
 				if err != nil {
-					errorCh <- err
+					if err.Error() == "Infeasible" {
+						errorCh <- fmt.Errorf("Fathom")
+					} else {
+						errorCh <- err
+					}
 					return
+				}
+
+				if rand.Float64() < 0.2*(1-float64(n.FixedSubsets)/float64(inst.NumElements)) {
+					geneticSol := inst.geneticHeuristic(n, 300)
+					if geneticSol.TotalCost < repairedSol.TotalCost {
+						repairedSol = geneticSol
+					}
 				}
 
 				if n.DualBound <= bestPrimalSolution.TotalCost {
@@ -134,7 +180,7 @@ func (inst *Instance) SolveWithLagrangeanRelaxation() (*Solution, error) {
 		for range children {
 			select {
 			case err := <-errorCh:
-				if err.Error() != "Infeasible" {
+				if err.Error() != "Fathom" {
 					return nil, err
 				}
 			case repairedSol := <-primalCh:
@@ -145,21 +191,12 @@ func (inst *Instance) SolveWithLagrangeanRelaxation() (*Solution, error) {
 		}
 
 		close(nodesCh)
-
 		toPush := make([]*Node, 0, len(children))
 		for n := range nodesCh {
 			toPush = append(toPush, n)
 		}
 
-		slices.SortFunc(
-			toPush,
-			func(x, y *Node) int {
-				if x.DualBound < y.DualBound {
-					return 1
-				}
-				return -1
-			},
-		)
+		slices.SortFunc(toPush, nodeComparator)
 
 		for _, n := range toPush {
 			nodesDeque.Push(n)
@@ -167,20 +204,4 @@ func (inst *Instance) SolveWithLagrangeanRelaxation() (*Solution, error) {
 	}
 
 	return bestPrimalSolution, nil
-}
-
-func generateChildren(inst *Instance, node *Node) []*Node {
-	treeChildren := int(math.Min(bbTreeChildren, float64(inst.NumSubsets-node.FixedSubsets+1)))
-	nodes := make([]*Node, 0, treeChildren)
-
-	for i := range treeChildren - 2 {
-		flags := make([]bool, i+1)
-		flags[i] = true
-		nodes = append(nodes, inst.fixSubsetInPartialSol(node, flags))
-	}
-	flags := make([]bool, treeChildren-1)
-	nodes = append(nodes, inst.fixSubsetInPartialSol(node, flags))
-	flags[len(flags)-1] = true
-	nodes = append(nodes, inst.fixSubsetInPartialSol(node, flags))
-	return nodes
 }

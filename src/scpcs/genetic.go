@@ -1,9 +1,11 @@
 package scpcs
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"runtime"
+	"time"
 
 	"github.com/tomcraven/goga"
 	"gonum.org/v1/gonum/mat"
@@ -92,6 +94,14 @@ func (ec *myEliteConsumer) OnElite(g goga.Genome) {
 const populationSize = 1000
 
 func (inst *Instance) geneticHeuristic(partialSol *Node, rounds int) *Solution {
+	partialMutate := func(g1, g2 goga.Genome) (goga.Genome, goga.Genome) {
+		g1BitsOrig := g1.GetBits()
+		g1Bits := g1BitsOrig.CreateCopy()
+		randomBit := partialSol.FixedSubsets + rand.Intn(inst.NumElements-partialSol.FixedSubsets)
+		g1Bits.Set(randomBit, 1-g1Bits.Get(randomBit))
+		return goga.NewGenome(g1Bits), goga.NewGenome(*g2.GetBits())
+	}
+
 	genAlgo := goga.NewGeneticAlgorithm()
 	simulator := &selectionSimulator{
 		MaximumRounds: maximumRounds,
@@ -111,12 +121,12 @@ func (inst *Instance) geneticHeuristic(partialSol *Node, rounds int) *Solution {
 			{P: 0.9, F: goga.TwoPointCrossover, UseElite: true},
 			{P: 0.9, F: goga.TwoPointCrossover},
 			{P: 0.9, F: goga.TwoPointCrossover},
-			{P: 0.9, F: goga.Mutate},
-			{P: 0.9, F: goga.Mutate},
-			{P: 0.9, F: goga.Mutate},
-			{P: 0.9, F: goga.Mutate},
-			{P: 0.9, F: goga.Mutate},
-			{P: 0.9, F: goga.Mutate},
+			{P: 0.9, F: partialMutate},
+			{P: 0.9, F: partialMutate},
+			{P: 0.9, F: partialMutate},
+			{P: 0.9, F: partialMutate},
+			{P: 0.9, F: partialMutate},
+			{P: 0.9, F: partialMutate},
 			{P: 0.9, F: goga.UniformCrossover},
 		},
 	)
@@ -129,6 +139,7 @@ func (inst *Instance) geneticHeuristic(partialSol *Node, rounds int) *Solution {
 
 	noImprovRounds := 0
 	lastFitness := math.MinInt
+	t := time.Now()
 	genAlgo.SimulateUntil(func(g goga.Genome) bool {
 		if g.GetFitness() == math.MinInt {
 			return false
@@ -142,6 +153,7 @@ func (inst *Instance) geneticHeuristic(partialSol *Node, rounds int) *Solution {
 
 		return noImprovRounds == rounds
 	})
+	fmt.Println("Genetic algorithm time:", time.Since(t))
 
 	if eliteConsumer.BestGenome == nil {
 		return &Solution{

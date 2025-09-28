@@ -11,12 +11,16 @@ import (
 	"gonum.org/v1/gonum/mat"
 )
 
-const maximumRounds = 5000
+const (
+	maximumRounds  = 10000
+	populationSize = 1000
+)
 
 type selectionSimulator struct {
 	ElapsedRounds int
 	MaximumRounds int
 	Instance      *Instance
+	TotalCost     int
 }
 
 func getSelectedFromGenome(g goga.Genome) (selected *mat.VecDense) {
@@ -54,9 +58,9 @@ func (sms *selectionSimulator) Simulate(g goga.Genome) {
 	}
 
 	if sms.Instance.isFeasible(selected) {
-		g.SetFitness(-int(sms.Instance.getCost(selected)))
+		g.SetFitness(sms.TotalCost + 2 - int(sms.Instance.getCost(selected)))
 	} else {
-		g.SetFitness(math.MinInt)
+		g.SetFitness(1)
 	}
 }
 func (sms *selectionSimulator) ExitFunc(g goga.Genome) bool {
@@ -91,8 +95,6 @@ func (ec *myEliteConsumer) OnElite(g goga.Genome) {
 	}
 }
 
-const populationSize = 1000
-
 func (inst *Instance) geneticHeuristic(partialSol *Node, rounds int) *Solution {
 	partialMutate := func(g1, g2 goga.Genome) (goga.Genome, goga.Genome) {
 		g1BitsOrig := g1.GetBits()
@@ -106,6 +108,7 @@ func (inst *Instance) geneticHeuristic(partialSol *Node, rounds int) *Solution {
 	simulator := &selectionSimulator{
 		MaximumRounds: maximumRounds,
 		Instance:      inst,
+		TotalCost:     int(mat.Sum(inst.Costs)),
 	}
 	genAlgo.Simulator = simulator
 	genAlgo.BitsetCreate = &myBitsetCreate{
@@ -127,12 +130,11 @@ func (inst *Instance) geneticHeuristic(partialSol *Node, rounds int) *Solution {
 			{P: 0.9, F: partialMutate},
 			{P: 0.9, F: partialMutate},
 			{P: 0.9, F: partialMutate},
-			{P: 0.9, F: goga.UniformCrossover},
 		},
 	)
 	genAlgo.Selector = goga.NewSelector(
 		[]goga.SelectorFunctionProbability{
-			{P: 0.9, F: goga.Roulette},
+			{P: 1, F: goga.Roulette},
 		},
 	)
 	genAlgo.Init(populationSize, runtime.NumCPU())
@@ -156,6 +158,7 @@ func (inst *Instance) geneticHeuristic(partialSol *Node, rounds int) *Solution {
 	fmt.Println("Genetic algorithm time:", time.Since(t))
 
 	if eliteConsumer.BestGenome == nil {
+		fmt.Println("Genetic algorithm bound: +inf")
 		return &Solution{
 			Subsets:   mat.NewVecDense(inst.NumSubsets, nil),
 			TotalCost: math.Inf(1),
@@ -163,9 +166,11 @@ func (inst *Instance) geneticHeuristic(partialSol *Node, rounds int) *Solution {
 	}
 
 	selected := getSelectedFromGenome(eliteConsumer.BestGenome)
+	cost := inst.getCost(selected)
+	fmt.Println("Genetic algorithm bound:", cost)
 
 	return &Solution{
 		Subsets:   selected,
-		TotalCost: inst.getCost(selected),
+		TotalCost: cost,
 	}
 }

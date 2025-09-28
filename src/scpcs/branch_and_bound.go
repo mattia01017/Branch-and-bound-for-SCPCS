@@ -100,7 +100,7 @@ func (inst *Instance) SolveWithLagrangeanRelaxation() (*Solution, error) {
 		},
 	}
 
-	bestPrimalSolution := inst.geneticHeuristic(initialNode, 1000)
+	bestPrimalSolution := inst.geneticHeuristic(initialNode, 2000)
 	fmt.Println("Genetic algorithm primal bound:", bestPrimalSolution.TotalCost)
 
 	initialLB, lambda, err := inst.optimizeSubgradient(lp, initialNode)
@@ -138,6 +138,7 @@ func (inst *Instance) SolveWithLagrangeanRelaxation() (*Solution, error) {
 		primalCh := make(chan *Solution)
 		nodesCh := make(chan *Node, len(children))
 		for _, n := range children {
+			r := rand.Float64()
 			go func() {
 				dualSol, lambda, err := inst.optimizeSubgradient(cloneLp(lp), n)
 				if err != nil {
@@ -162,7 +163,7 @@ func (inst *Instance) SolveWithLagrangeanRelaxation() (*Solution, error) {
 					return
 				}
 
-				if rand.Float64() < 0.2*(1-float64(n.FixedSubsets)/float64(inst.NumElements)) {
+				if r < 0.2*(1-float64(n.FixedSubsets)/float64(inst.NumSubsets)) {
 					geneticSol := inst.geneticHeuristic(n, 300)
 					if geneticSol.TotalCost < repairedSol.TotalCost {
 						repairedSol = geneticSol

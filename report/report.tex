@@ -7,9 +7,46 @@
 \usepackage[english]{babel}
 
 \author{Mattia Lecchi (33362A)}
-\title{Branch and bound algorithm with Lagrangean relaxation for SCP with conflict sets\\ 
+\title{Branch and bound algorithm for SCP with Conflict Sets\\ 
 	\large Project of Operations Research Complements (A.Y. 2024/2025)}
 
 \begin{document}
-	\maketitle	
+	\maketitle
+	
+\section{Introduction}
+The project tackle a variant of the Set Covering Problem (SCP) introducing penalties if certain couples of sets are selected. Formally, let $E=\{1,...,n\}$ be a set of elements and let $\mathcal S=\{S_j\subseteq E : j \in M\}$ be the set of subsets, where $M=\{1,...,m\}$. 
+The subsets composition is defined by a matrix $A \in \mathbb R^{n\times m}$:
+$$
+A_{ij} =
+\begin{cases}
+	1& \text{if } E_i \in S_j\\
+	0& \text{otherwise}\\
+\end{cases}
+$$
+The vector $c \in \mathbb R^{m}$ defines the costs on each subset, while the matrix $P \in \mathbb R^{m\times m}$ defines the penalties for each couple of subsets, i.e. $P_{ij}$ is the penalty paid if $S_i,S_j\in \mathcal S$ are both selected.
+A MILP formulation for the SCP with conflict sets is the following:
+\begin{align}
+	\min & \sum_{i\in S} x_i c_i + \sum_{i \in S} \sum_{j \in S} y_{ij} P_{ij} & \\
+	\text{s.t. } 
+	& \sum_{i\in S} A_{ik} x_i \ge 1 & \forall k \in E \\
+	& x_i + x_j \le 1 + y_{ij} & \forall i,j \in M \\
+	& x_i \in \{0, 1\} & \forall i \in M \\
+	& y_{ij} \in \{0, 1\} & \forall i,j \in M\\
+\end{align}
+
+The chosen approach is to use a branch and bound algorithm with a lagrangean relaxation used for dual bound computing.
+
+\section{Lagrangean relaxation}
+
+We chose to relax the covering constraints, obtaining the following lagrangean relaxation:
+
+\begin{align}
+	\min & \sum_{i\in S} x_i c_i + \sum_{i \in S} \sum_{j \in S} y_{ij} P_{ij} + \lambda_i \left(\sum_{i\in S}A_{ik} x_i - 1\right)  & \\
+	\text{s.t. }
+	& x_i + x_j \le 1 + y_{ij} & \forall i,j \in M \\
+	& x_i \in \{0, 1\} & \forall i \in M \\
+	& y_{ij} \in \{0, 1\} & \forall i,j \in M\\
+\end{align}
+	
+	
 \end{document}

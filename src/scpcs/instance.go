@@ -84,7 +84,7 @@ func (inst *Instance) computeConflicts(conflictThreshold int) error {
 		for j := i + 1; j < inst.NumSubsets; j++ {
 			intsersectionSize := mat.Dot(inst.Subsets.ColView(i), (inst.Subsets.ColView(j)))
 			conflictSize := math.Round(intsersectionSize) - float64(conflictThreshold)
-			if conflictSize > EPS {
+			if conflictSize > eps {
 				conflictCost := coeff * conflictSize
 				inst.Conflicts.Set(i, j, float64(conflictCost))
 				inst.Conflicts.Set(j, i, float64(conflictCost))

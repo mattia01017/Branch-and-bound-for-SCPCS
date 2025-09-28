@@ -17,8 +17,8 @@ func (inst *Instance) runHighsSolver(lp *highs.Model) (*Solution, error) {
 	}
 
 	return &Solution{
-		SelectedSubsets: mat.NewVecDense(inst.NumSubsets, solution.ColumnPrimal[:inst.NumSubsets]),
-		TotalCost:       solution.Objective,
+		Subsets:   mat.NewVecDense(inst.NumSubsets, solution.ColumnPrimal[:inst.NumSubsets]),
+		TotalCost: solution.Objective,
 	}, nil
 }
 

@@ -17,23 +17,23 @@ type Instance struct {
 }
 
 type Solution struct {
-	SelectedSubsets *mat.VecDense
-	TotalCost       float64
+	Subsets   *mat.VecDense
+	TotalCost float64
 }
 
 type Node struct {
-	CurrentSolution *Solution
-	DualBound       float64
-	FixedSubsets    int
-	LagrangeanMul   *mat.VecDense
+	PrimalSolution *Solution
+	DualBound      float64
+	FixedSubsets   int
+	LagrangeanMul  *mat.VecDense
 }
 
 func (sol *Solution) String() string {
 	s := new(strings.Builder)
 	s.WriteString(fmt.Sprintf("Total cost: %f\n", sol.TotalCost))
 	s.WriteString("Selected subsets: [ ")
-	for i := 0; i < sol.SelectedSubsets.Len(); i++ {
-		if sol.SelectedSubsets.AtVec(i) > 0.5 {
+	for i := 0; i < sol.Subsets.Len(); i++ {
+		if sol.Subsets.AtVec(i) > 0.5 {
 			s.WriteString(fmt.Sprint(i))
 			s.WriteString(" ")
 		}
@@ -46,8 +46,8 @@ func (sol *Node) String() string {
 	s := new(strings.Builder)
 	fmt.Fprintln(s, "Fixed subsets:", sol.FixedSubsets)
 	s.WriteString("Selected subsets: [ ")
-	for i := 0; i < sol.CurrentSolution.SelectedSubsets.Len(); i++ {
-		if sol.CurrentSolution.SelectedSubsets.AtVec(i) > 0.5 {
+	for i := 0; i < sol.PrimalSolution.Subsets.Len(); i++ {
+		if sol.PrimalSolution.Subsets.AtVec(i) > 0.5 {
 			fmt.Fprint(s, i)
 			s.WriteString(" ")
 		}

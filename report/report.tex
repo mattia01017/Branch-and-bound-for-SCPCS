@@ -5,15 +5,21 @@
 \usepackage{amssymb}
 \usepackage[utf8]{inputenc}
 \usepackage[english]{babel}
+\usepackage[
+backend=bibtex,
+sorting=ynt
+]{biblatex}
+\addbibresource{bibliography.bib}
 
 \author{Mattia Lecchi (33362A)}
-\title{Branch and bound algorithm for SCP with Conflict Sets\\ 
+\title{Branch and bound algorithm for SCP with conflict sets\\ 
 	\large Project of Operations Research Complements (A.Y. 2024/2025)}
 
 \begin{document}
 	\maketitle
 	
 \section{Introduction}
+
 The project tackle a variant of the Set Covering Problem (SCP) introducing penalties if certain couples of sets are selected. Formally, let $E=\{1,...,n\}$ be a set of elements and let $\mathcal S=\{S_j\subseteq E : j \in M\}$ be the set of subsets, where $M=\{1,...,m\}$. 
 The subsets composition is defined by a matrix $A \in \mathbb R^{n\times m}$:
 $$
@@ -24,29 +30,92 @@ A_{ij} =
 \end{cases}
 $$
 The vector $c \in \mathbb R^{m}$ defines the costs on each subset, while the matrix $P \in \mathbb R^{m\times m}$ defines the penalties for each couple of subsets, i.e. $P_{ij}$ is the penalty paid if $S_i,S_j\in \mathcal S$ are both selected.
-A MILP formulation for the SCP with conflict sets is the following:
-\begin{align}
-	\min & \sum_{i\in S} x_i c_i + \sum_{i \in S} \sum_{j \in S} y_{ij} P_{ij} & \\
+The IP formulation for the SCP with conflict sets is the following:
+\begin{align*}
+	\min_{x,y} & \sum_{i\in M} c_i x_i + \sum_{i \in M} \sum_{j \in M} P_{ij} y_{ij} & \\
 	\text{s.t. } 
 	& \sum_{i\in S} A_{ik} x_i \ge 1 & \forall k \in E \\
 	& x_i + x_j \le 1 + y_{ij} & \forall i,j \in M \\
 	& x_i \in \{0, 1\} & \forall i \in M \\
 	& y_{ij} \in \{0, 1\} & \forall i,j \in M\\
-\end{align}
-
-The chosen approach is to use a branch and bound algorithm with a lagrangean relaxation used for dual bound computing.
+\end{align*}
+although it can be noticed that integrality constraints on $y_{ij}$ variables are redundant.
+The chosen approach for exact optimization is a branch and bound algorithm with Lagrangean relaxation for dual bound computation.
 
 \section{Lagrangean relaxation}
 
-We chose to relax the covering constraints, obtaining the following lagrangean relaxation:
+We chose to relax the covering constraints, obtaining the following Lagrangean relaxation:
 
-\begin{align}
-	\min & \sum_{i\in S} x_i c_i + \sum_{i \in S} \sum_{j \in S} y_{ij} P_{ij} + \lambda_i \left(\sum_{i\in S}A_{ik} x_i - 1\right)  & \\
+\begin{align*}
+	\min_{x,y} & \sum_{i\in M} c_i x_i + \sum_{i \in M} \sum_{j \in M} P_{ij} y_{ij} + \sum_{k \in E}\sum_{i\in M} \left(\lambda_k A_{ik} x_i - 1\right)  & \\
 	\text{s.t. }
 	& x_i + x_j \le 1 + y_{ij} & \forall i,j \in M \\
 	& x_i \in \{0, 1\} & \forall i \in M \\
 	& y_{ij} \in \{0, 1\} & \forall i,j \in M\\
-\end{align}
-	
-	
+\end{align*}
+rewriting the objective function as:
+$$
+\min_{x,y} \sum_{i\in M} \left(c_i + \sum_{k \in E} \lambda_k A_{ik}\right) x_i + \sum_{i \in M} \sum_{j \in M} P_{ij} y_{ij} - \sum_{k \in E} \lambda_k
+$$
+we obtain a linear formulation of the quadratic knapsack problem for the Lagrangean primal, ignoring the constant term. The quadratic knapsack problem is still a NP-hard problem.
+
+\section{Algorithm}
+
+The algorithm is a branch-and-bound using a Lagrangean relaxation for the dual computation at each node level. At each iteration, the algorithm generate 6 subproblem children by fixing the first free subset choice variables as following:
+\begin{align*}
+&x_1 = 1\\
+&x_1 = 0, x_2 = 1\\
+&x_1 = 0, x_2 = 0, x_3 = 1\\
+&x_1 = 0, x_2 = 0, x_3 = 0, x_4 = 1\\
+&x_1 = 0, x_2 = 0, x_3 = 0, x_4 = 0, x_5 = 1\\
+&x_1 = 0, x_2 = 0, x_3 = 0, x_4 = 0, x_5 = 0.
+\end{align*}
+The dual bounds for each generated subproblem are computed in parallel, thus the choice of the number of children should be based on the number of CPU cores available. 
+
+Solving the Lagrangean relaxation yields a possibly infeasible solution, that is a subset selection that only partially covers the elements. Applying a simple and fast greedy heuristic, the algorithm updates the primal bound; if the repair procedure fails to provide a feasible solution considering the currently fixed variables, then the subproblem can be discarded, as no sub-problem can be a feasible solution.
+The nodes are explored using a depth-first strategy, implemented with a stack. The subproblems generated are pushed in the stack in descending order of dual bound. This ensures that subproblems with a lower dual bounds are solved first among siblings.
+
+\subsection{Greedy heuristic}
+A simple greedy heuristic is applied on each subproblem to repair the potentially infeasible solution from the Lagrangean relaxation. The algorithm relies on a minimum priority queue, assigning a cost to each subset. The algorithm iteratively extract a subset from the queue until the extracted subsets form a feasible solution. The initial costs for a subset $S_i$ is computed as $\hat c_i^{(0)} = c_i/|S_i|$ and is updated at each iteration considering the penalties: suppose that at iteration $\tau$ the subset $S_j$ is selected. The penalties are updated as follows:
+\begin{align*}
+	\hat c_k^{(\tau+1)} = \hat c_k^{(\tau)} + P_{jk} \quad \forall k \in M	
+\end{align*}
+It's trivial to apply this heuristic to repair infeasible solution by assigning to each $\hat c_i^{(0)}$ the penalties associated to subset already chosen. Furthermore, the priority queue should not be initialized including subsets with decision variable already fixed.
+
+\subsection{Genetic metaheuristic}
+The greedy heuristic provides a quite loose bound when a large number of decision variables isn't fixed. A genetic metaheuristic is a tunable algorithm that typically offers a tighter bound at the expense of greater computational cost.
+A genome is represented by the vector of subset choice variables, its fitness is given by
+$$
+f(x) = 
+\begin{cases}
+	2 + \sum_{j\in M} (c_j - c_j x_j) & \text{if } Ax \geq 1\\
+	1 & \text{otherwise}
+\end{cases}
+$$
+The algorithm considers a population of 1000, each round is composed of 1 uniform crossover with the elite genome, 2 two point crossovers, 6 mutations and one final two points crossover, each taking place with probability 0.9. The selection strategy is the roulette, i.e. it selects for the next round 1000 genomes with the probability of being selected proportional to the fitness. The maximum number of rounds is 10000, but it stops early if the best genomes doesn't change in 2000 rounds.
+
+\subsection{Subgradient method}
+To obtain a good dual bound, we must solve the Lagrangean dual of the relaxation. The chosen approach is the subgradient method. The lagrangean multipliers are initialized with 1 in the first execution on the original problem, while for the subsequent subproblems the multipliers are initialized with the values computed on the parent solution; while this doesn't have implications on the solution found, as it's a convex problem, it can help converging faster to the optimal solution, with the assumption that the multipliers won't change too much with some new variables fixed in the primal problem.
+
+At each iteration of the subgradient method, the relaxation with some fixed values for the Lagrangean multipliers must be computed. The algorithm relies on an external MILP solver for this purpose, namely HiGHS.
+The Lagrangean multipliers are updated according to the following formula:
+$$
+\lambda^{(\tau+1)}=\max\{\lambda^{(\tau)} - \sigma^{(\tau)}(1 - Ax^*), 0\}
+$$
+where $x^*$ is the optimal value for the relaxation with $\lambda=\lambda^{(\tau)}$ and $\sigma^{(\tau)}$ is a step that is initialized as 10 and updated for the next iteration as $\sigma^{(\tau+1)}=0.6\sigma^{(\tau)}$
+
+\section{Implementation}
+
+The algorithm is implemented in Go, a fast compiled language that provides convenient built-in virtual threads for developing parallel algorithms, namely the \textit{goroutines}, employed in the dual bounds approximation and the genetic algorithm.
+Vector and matrix calculations were carried out via the gonum external package, which provides an implementation for the float64 BLAS API.
+The program communicates with the HiGHS solver through a wrapper of its header files and library links.
+
+The program is implemented as a command-line tool and tested against small instances created via a simple generator.The inputs are the number of elements and subsets and the mean and standard deviation of the ratio of subsets in which an element appears, sampled from a normal distribution.
+
+\section{Conclusions}
+
+The instances provided in https://people.brunel.ac.uk/~mastjjb/jeb/orlib/scpinfo.html used in \cite{CARRABS2024106620} are computationally intractable for the developed algorithm, even for instances that HiGHS can solve in less than a minute, considering a middle-end laptop. The generator was used to create instances tractable for the algorithm, with a not too dense matrix of penalties. 
+
+\printbibliography
+
 \end{document}

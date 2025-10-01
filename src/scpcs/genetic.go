@@ -32,18 +32,6 @@ func getSelectedFromGenome(g goga.Genome) (selected *mat.VecDense) {
 	return
 }
 
-func (inst *Instance) getCost(selected *mat.VecDense) (cost float64) {
-	cost = mat.Dot(selected, inst.Costs)
-	for i := range inst.NumSubsets {
-		for j := i + 1; j < inst.NumSubsets; j++ {
-			if selected.At(i, 0) > 0.5 && selected.At(j, 0) > 0.5 {
-				cost += inst.Conflicts.At(i, j)
-			}
-		}
-	}
-	return
-}
-
 func (bestGenome *selectionSimulator) OnBeginSimulation() {
 }
 func (sms *selectionSimulator) OnEndSimulation() {
@@ -105,12 +93,11 @@ func (inst *Instance) geneticHeuristic(partialSol *Node, rounds int) *Solution {
 	}
 
 	genAlgo := goga.NewGeneticAlgorithm()
-	simulator := &selectionSimulator{
+	genAlgo.Simulator = &selectionSimulator{
 		MaximumRounds: maximumRounds,
 		Instance:      inst,
 		TotalCost:     int(mat.Sum(inst.Costs)),
 	}
-	genAlgo.Simulator = simulator
 	genAlgo.BitsetCreate = &myBitsetCreate{
 		Instance:     inst,
 		SolutionNode: partialSol,
@@ -121,7 +108,7 @@ func (inst *Instance) geneticHeuristic(partialSol *Node, rounds int) *Solution {
 	genAlgo.EliteConsumer = eliteConsumer
 	genAlgo.Mater = goga.NewMater(
 		[]goga.MaterFunctionProbability{
-			{P: 0.9, F: goga.TwoPointCrossover, UseElite: true},
+			{P: 0.9, F: goga.UniformCrossover, UseElite: true},
 			{P: 0.9, F: goga.TwoPointCrossover},
 			{P: 0.9, F: goga.TwoPointCrossover},
 			{P: 0.9, F: partialMutate},
@@ -130,6 +117,7 @@ func (inst *Instance) geneticHeuristic(partialSol *Node, rounds int) *Solution {
 			{P: 0.9, F: partialMutate},
 			{P: 0.9, F: partialMutate},
 			{P: 0.9, F: partialMutate},
+			{P: 0.9, F: goga.TwoPointCrossover},
 		},
 	)
 	genAlgo.Selector = goga.NewSelector(

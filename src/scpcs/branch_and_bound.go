@@ -3,7 +3,6 @@ package scpcs
 import (
 	"fmt"
 	"math"
-	"math/rand"
 	"slices"
 
 	"github.com/lanl/highs"
@@ -11,11 +10,8 @@ import (
 )
 
 const (
-	eps = 1e-8
-
-	bbTreeChildren   = 6
-	subgradBaseStep  = 10.0
-	subgradCoeffStep = 0.6
+	eps            = 1e-8
+	bbTreeChildren = 6
 )
 
 func cloneLp(lp *highs.Model) *highs.Model {
@@ -138,7 +134,6 @@ func (inst *Instance) SolveWithLagrangeanRelaxation() (*Solution, error) {
 		primalCh := make(chan *Solution)
 		nodesCh := make(chan *Node, len(children))
 		for _, n := range children {
-			r := rand.Float64()
 			go func() {
 				dualSol, lambda, err := inst.optimizeSubgradient(cloneLp(lp), n)
 				if err != nil {
@@ -146,7 +141,7 @@ func (inst *Instance) SolveWithLagrangeanRelaxation() (*Solution, error) {
 					return
 				}
 				if inst.isLagrangianOptimal(dualSol, lambda) {
-					errorCh <- fmt.Errorf("Fathom")
+					primalCh <- dualSol
 					return
 				}
 
@@ -161,13 +156,6 @@ func (inst *Instance) SolveWithLagrangeanRelaxation() (*Solution, error) {
 						errorCh <- err
 					}
 					return
-				}
-
-				if r < 0.2*(1-float64(n.FixedSubsets)/float64(inst.NumSubsets)) {
-					geneticSol := inst.geneticHeuristic(n, 300)
-					if geneticSol.TotalCost < repairedSol.TotalCost {
-						repairedSol = geneticSol
-					}
 				}
 
 				if n.DualBound <= bestPrimalSolution.TotalCost {

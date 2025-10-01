@@ -20,6 +20,18 @@ func errorCoalesce(args ...error) error {
 	return nil
 }
 
+func (inst *Instance) getCost(selected *mat.VecDense) (cost float64) {
+	cost = mat.Dot(selected, inst.Costs)
+	for i := range inst.NumSubsets {
+		for j := i + 1; j < inst.NumSubsets; j++ {
+			if selected.At(i, 0) > 0.5 && selected.At(j, 0) > 0.5 {
+				cost += inst.Conflicts.At(i, j)
+			}
+		}
+	}
+	return
+}
+
 func (inst *Instance) parseFirstLine(scanner *bufio.Scanner) error {
 	scanner.Scan()
 	line := strings.Fields(scanner.Text())

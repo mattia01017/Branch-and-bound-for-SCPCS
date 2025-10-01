@@ -10,6 +10,11 @@ import (
 	"gonum.org/v1/gonum/mat"
 )
 
+const (
+	subgradBaseStep  = 10.0
+	subgradCoeffStep = 0.6
+)
+
 func (inst *Instance) optimizeSubgradient(lp *highs.Model, partialSol *Node) (sol *Solution, lambda *mat.VecDense, err error) {
 	lambda = mat.NewVecDense(inst.NumElements, nil)
 	if partialSol.LagrangeanMul == nil {

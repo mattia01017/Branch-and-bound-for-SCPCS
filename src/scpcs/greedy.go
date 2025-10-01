@@ -8,28 +8,15 @@ import (
 )
 
 func (inst *Instance) greedyRepair(node *Node) (*Solution, error) {
-	costs := mat.NewVecDense(inst.NumSubsets, nil)
-	costs.CloneFromVec(inst.Costs)
 	pq := priorityqueue.New[int, float64](priorityqueue.MinHeap)
 	selectedSubset := mat.NewVecDense(inst.NumSubsets, nil)
 	selectedSubset.CloneFromVec(node.PrimalSolution.Subsets)
 
-	for i := range node.FixedSubsets {
-		cost := inst.Costs.At(i, 0)
-		if node.PrimalSolution.Subsets.At(i, 0) > 0.5 {
-			pq.Put(i, float64(-i))
-			cost += mat.Dot(selectedSubset, inst.Conflicts.RowView(i))
-		}
-		costs.SetVec(i, cost)
-	}
-
 	for i := node.FixedSubsets; i < inst.NumSubsets; i++ {
-		costs.SetVec(i, inst.Costs.At(i, 0))
-		if node.PrimalSolution.Subsets.At(i, 0) > 0.5 {
-			pq.Put(i, float64(-i))
-		} else {
-			pq.Put(i, inst.Costs.At(i, 0)/mat.Sum(inst.Subsets.ColView(i)))
-		}
+		pq.Put(
+			i,
+			(inst.Costs.At(i, 0)+mat.Dot(selectedSubset, inst.Conflicts.RowView(i)))/mat.Sum(inst.Subsets.ColView(i)),
+		)
 	}
 
 	for !inst.isFeasible(selectedSubset) {
@@ -42,8 +29,7 @@ func (inst *Instance) greedyRepair(node *Node) (*Solution, error) {
 
 		for i := range inst.NumSubsets {
 			if inst.Conflicts.At(i, item.Value) > 0 {
-				newCost := costs.At(i, 0) + inst.Conflicts.At(i, item.Value)/2
-				costs.SetVec(i, newCost)
+				newCost := item.Priority + inst.Conflicts.At(i, item.Value)
 				if node.PrimalSolution.Subsets.At(i, 0) < 0.5 {
 					pq.Update(i, newCost/mat.Sum(inst.Subsets.ColView(i)))
 				}
@@ -53,6 +39,6 @@ func (inst *Instance) greedyRepair(node *Node) (*Solution, error) {
 
 	return &Solution{
 		Subsets:   selectedSubset,
-		TotalCost: mat.Dot(selectedSubset, costs),
+		TotalCost: inst.getCost(selectedSubset),
 	}, nil
 }

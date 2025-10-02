@@ -1,9 +1,7 @@
 package scpcs
 
 import (
-	"fmt"
 	"math"
-	"os"
 	"slices"
 
 	"github.com/lanl/highs"
@@ -32,10 +30,6 @@ func (inst *Instance) optimizeSubgradient(lp *highs.Model, partialSol *Node) (so
 
 	for {
 		sol, err = inst.solveLagrangeanPrimal(lp, partialSol, lambda)
-		if math.IsNaN(sol.TotalCost) {
-			fmt.Fprintln(os.Stderr, "Obtained NaN in subgradient method")
-			return
-		}
 		if err != nil {
 			return
 		}

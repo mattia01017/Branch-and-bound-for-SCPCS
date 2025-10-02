@@ -9,6 +9,6 @@ require (
 )
 
 require (
-	github.com/tomcraven/goga v0.0.0-20220413070930-f4ca47f4d421 // indirect
+	github.com/tomcraven/goga v0.0.0-20220413070930-f4ca47f4d421
 	golang.org/x/exp v0.0.0-20250911091902-df9299821621 // indirect
 )

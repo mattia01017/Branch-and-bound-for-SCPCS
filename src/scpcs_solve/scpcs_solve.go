@@ -4,19 +4,24 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"scp_with_conflicts/src/scpcs"
+	"scp_with_conflicts/src/scpcs_solve/scpcs"
+	"strings"
 )
 
 func main() {
 	var solveHighs, solveLagrangean bool
 	var conflictThreshold int
+	var paths []string
 
+	flag.Func("inst", "a list of instance file paths, separated by a whitespace", func(s string) error {
+		paths = strings.Fields(s)
+		return nil
+	})
 	flag.BoolVar(&solveHighs, "highs", false, "Solve the problem using the HiGHS solver")
 	flag.BoolVar(&solveLagrangean, "lagrangean", false, "Solve with branch and bound using lagrangean relaxation for dual")
 	flag.IntVar(&conflictThreshold, "threshold", 0, "Define the minimum intersection size between subsets to be considered in conflict")
 
 	flag.Parse()
-	paths := flag.Args()
 
 	if len(paths) == 0 {
 		fmt.Fprintln(os.Stderr, "Must specify at least a path")

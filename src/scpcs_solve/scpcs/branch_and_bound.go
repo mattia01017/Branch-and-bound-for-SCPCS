@@ -96,7 +96,7 @@ func (inst *Instance) SolveWithLagrangeanRelaxation() (*Solution, error) {
 		},
 	}
 
-	bestPrimalSolution := inst.geneticHeuristic(initialNode, 2000)
+	bestPrimalSolution := inst.geneticHeuristic(initialNode, 500)
 	fmt.Println("Genetic algorithm primal bound:", bestPrimalSolution.TotalCost)
 
 	initialLB, lambda, err := inst.optimizeSubgradient(lp, initialNode)
@@ -116,6 +116,7 @@ func (inst *Instance) SolveWithLagrangeanRelaxation() (*Solution, error) {
 		node := nodesDeque.Pop()
 		fmt.Println(node)
 		fmt.Println("Current UB:", bestPrimalSolution.TotalCost)
+		fmt.Println()
 
 		if node.DualBound > bestPrimalSolution.TotalCost {
 			continue
@@ -190,6 +191,10 @@ func (inst *Instance) SolveWithLagrangeanRelaxation() (*Solution, error) {
 		for _, n := range toPush {
 			nodesDeque.Push(n)
 		}
+	}
+
+	if math.IsInf(bestPrimalSolution.TotalCost, 1) {
+		return nil, fmt.Errorf("Infeasible")
 	}
 
 	return bestPrimalSolution, nil

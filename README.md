@@ -4,7 +4,7 @@ Branch and bound algorithm for the Set Covering Problem with conflict sets
 
 ## Build
 
-To build the tools use the `go build` utility on `src/scpcs_solve/scpcs_solve.go` and `src/generator/generator.go` to build the solving algorithm and the instance generator, respectively.
+To build the tools use the `go build` utility on `src/scpcs_solve/scpcs_solve.go` and `src/generator/generator.go` for the solving algorithm and the instance generator, respectively.
 
 ## Usage
 
